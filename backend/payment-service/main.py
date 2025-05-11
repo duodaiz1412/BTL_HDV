@@ -38,6 +38,8 @@ class PaymentBase(BaseModel):
 # Helper functions
 def convert_mongo_id(payment):
     payment["_id"] = str(payment["_id"])
+    if "created_at" in payment and isinstance(payment["created_at"], datetime):
+        payment["created_at"] = payment["created_at"].isoformat()
     return payment
 
 async def send_sqs_message(queue_url, message):
@@ -61,8 +63,12 @@ async def create_payment(payment: PaymentBase):
         result = await db.payments.insert_one(payment_dict)
         payment_dict["_id"] = str(result.inserted_id)
 
+        # Convert datetime to string for SQS message
+        sqs_message = payment_dict.copy()
+        sqs_message["created_at"] = sqs_message["created_at"].isoformat()
+
         # Send message to SQS
-        await send_sqs_message(PAYMENT_PROCESSED_QUEUE_URL, payment_dict)
+        await send_sqs_message(PAYMENT_PROCESSED_QUEUE_URL, sqs_message)
         
         return convert_mongo_id(payment_dict)
     except Exception as e:

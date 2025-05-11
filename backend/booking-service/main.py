@@ -43,6 +43,8 @@ class BookingBase(BaseModel):
 # Helper functions
 def convert_mongo_id(booking):
     booking["_id"] = str(booking["_id"])
+    if "created_at" in booking and isinstance(booking["created_at"], datetime):
+        booking["created_at"] = booking["created_at"].isoformat()
     return booking
 
 async def send_sqs_message(queue_url, message):
@@ -66,8 +68,12 @@ async def create_booking(booking: BookingBase):
         result = await db.bookings.insert_one(booking_dict)
         booking_dict["_id"] = str(result.inserted_id)
 
+        # Convert datetime to string for SQS message
+        sqs_message = booking_dict.copy()
+        sqs_message["created_at"] = sqs_message["created_at"].isoformat()
+
         # Send message to SQS
-        await send_sqs_message(BOOKING_CREATED_QUEUE_URL, booking_dict)
+        await send_sqs_message(BOOKING_CREATED_QUEUE_URL, sqs_message)
         
         return convert_mongo_id(booking_dict)
     except Exception as e:
