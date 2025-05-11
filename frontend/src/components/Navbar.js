@@ -1,33 +1,49 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
-function Navbar() {
+const Navbar = () => {
+  const navigate = useNavigate();
+  const customerId = localStorage.getItem('customer_id');
+
+  const handleLogout = () => {
+    localStorage.removeItem('customer_id');
+    navigate('/login');
+  };
+
   return (
-    <nav className="bg-white shadow-lg">
-      <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
-          <Link to="/" className="text-xl font-bold text-gray-800">
-            Movie Booking
+    <nav className="bg-gray-800 text-white p-4">
+      <div className="container mx-auto flex justify-between items-center">
+        <Link to="/" className="text-xl font-bold">
+          Movie Booking
+        </Link>
+        <div className="space-x-4">
+          <Link to="/" className="hover:text-gray-300">
+            Trang chủ
           </Link>
-          
-          <div className="flex space-x-4">
-            <Link to="/movies" className="text-gray-600 hover:text-gray-900">
-              Movies
+          {customerId ? (
+            <>
+              <Link to="/bookings" className="hover:text-gray-300">
+                Đặt vé của tôi
+              </Link>
+              <Link to="/profile" className="hover:text-gray-300">
+                Tài khoản
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="hover:text-gray-300"
+              >
+                Đăng xuất
+              </button>
+            </>
+          ) : (
+            <Link to="/login" className="hover:text-gray-300">
+              Đăng nhập
             </Link>
-            <Link to="/bookings" className="text-gray-600 hover:text-gray-900">
-              My Bookings
-            </Link>
-            <Link to="/login" className="text-gray-600 hover:text-gray-900">
-              Login
-            </Link>
-            <Link to="/register" className="text-gray-600 hover:text-gray-900">
-              Register
-            </Link>
-          </div>
+          )}
         </div>
       </div>
     </nav>
   );
-}
+};
 
 export default Navbar; 

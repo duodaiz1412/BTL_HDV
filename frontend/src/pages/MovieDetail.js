@@ -1,148 +1,125 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getMovie, getShowtimes, createBooking, createPayment } from '../services/api';
-import SeatSelection from '../components/SeatSelection';
+import { getMovieById, getShowtimes } from '../services/api';
 
 const MovieDetail = () => {
-  const { id } = useParams();
+  const { movieId } = useParams();
   const navigate = useNavigate();
   const [movie, setMovie] = useState(null);
   const [showtimes, setShowtimes] = useState([]);
-  const [selectedShowtime, setSelectedShowtime] = useState(null);
-  const [selectedSeats, setSelectedSeats] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchMovieDetails = async () => {
       try {
-        const [movieRes, showtimesRes] = await Promise.all([
-          getMovie(id),
-          // getShowtimes(id)
+        const [movieResponse, showtimesResponse] = await Promise.all([
+          getMovieById(movieId),
+          getShowtimes(movieId)
         ]);
-        setMovie(movieRes.data);
-        // setShowtimes(showtimesRes.data);
+        setMovie(movieResponse.data);
+        setShowtimes(showtimesResponse.data);
+        console.log('Showtimes data:', showtimesResponse.data);
+        setLoading(false);
       } catch (err) {
-        setError('Không thể tải thông tin phim');
-      } finally {
+        console.error('Error fetching movie details:', err);
+        setError('Failed to fetch movie details');
         setLoading(false);
       }
     };
-    fetchData();
-  }, [id]);
 
-  const handleShowtimeSelect = (showtime) => {
-    setSelectedShowtime(showtime);
-    setSelectedSeats([]);
+    fetchMovieDetails();
+  }, [movieId]);
+
+  // Điều hướng đến trang chọn ghế
+  const handleBookSeats = (showtimeId) => {
+    // Cập nhật movie_id vào localStorage khi người dùng chọn showtime
+    // Không cần xóa movie_id tại đây, vì chúng ta vẫn cần nó cho đến khi đặt vé xong
+    localStorage.setItem('selected_movie_id', movieId);
+    localStorage.setItem('selected_showtime_id', showtimeId);
+    navigate(`/seats/showtime/${showtimeId}`);
   };
 
-  const handleSeatsSelected = (seats) => {
-    setSelectedSeats(seats);
-  };
+  // Không xóa movie_id khi unmount component này nữa
+  // movie_id sẽ được xóa sau khi hoàn tất đặt vé hoặc hủy đặt vé
 
-  const handleBooking = async () => {
-    if (!selectedShowtime || selectedSeats.length === 0) {
-      setError('Vui lòng chọn suất chiếu và ghế');
-      return;
-    }
+  if (loading) return <div className="text-center p-8">Loading...</div>;
+  if (error) return <div className="text-center text-red-500 p-8">{error}</div>;
+  if (!movie) return <div className="text-center p-8">Movie not found</div>;
 
+  // Hàm định dạng thời gian hợp lệ
+  const formatDateTime = (dateTimeStr) => {
     try {
-      // Tạo booking
-      const bookingData = {
-        movie_id: id,
-        showtime_id: selectedShowtime.id,
-        seats: selectedSeats,
-        total_amount: selectedShowtime.price * selectedSeats.length,
-        customer_id: "1" // Tạm thời hardcode customer_id
+      const date = new Date(dateTimeStr);
+      if (isNaN(date.getTime())) {
+        return {
+          date: 'Thời gian không hợp lệ',
+          time: ''
+        };
+      }
+      return {
+        date: date.toLocaleDateString(),
+        time: date.toLocaleTimeString()
       };
-      const bookingRes = await createBooking(bookingData);
-
-      // Tạo payment
-      const paymentData = {
-        booking_id: bookingRes.data.id,
-        amount: bookingRes.data.total_amount,
-        payment_method: "cash"
+    } catch (error) {
+      return {
+        date: 'Thời gian không hợp lệ',
+        time: ''
       };
-      await createPayment(paymentData);
-
-      // Chuyển hướng đến trang xác nhận
-      navigate(`/bookings/${bookingRes.data.id}`);
-    } catch (err) {
-      setError('Không thể đặt vé. Vui lòng thử lại sau.');
     }
   };
 
-  if (loading) return <div className="text-center p-8">Đang tải...</div>;
-  if (error) return <div className="text-red-500 text-center p-8">{error}</div>;
-  if (!movie) return <div className="text-center p-8">Không tìm thấy phim</div>;
+  // Hàm định dạng tiền tệ
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND'
+    }).format(amount);
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div>
-          <img 
-            src={movie.poster_url} 
+      <div className="flex flex-col md:flex-row gap-8">
+        <div className="md:w-1/3">
+          <img
+            src={movie.poster_url}
             alt={movie.title}
             className="w-full rounded-lg shadow-lg"
           />
         </div>
-        <div>
+        <div className="md:w-2/3">
           <h1 className="text-3xl font-bold mb-4">{movie.title}</h1>
           <p className="text-gray-600 mb-4">{movie.description}</p>
           <div className="mb-4">
-            <p><strong>Thể loại:</strong> {movie.genre || 'Chưa cập nhật'}</p>
-            <p><strong>Đạo diễn:</strong> {movie.director || 'Chưa cập nhật'}</p>
-            <p><strong>Diễn viên:</strong> {movie.cast ? movie.cast.join(', ') : 'Chưa cập nhật'}</p>
-            <p><strong>Thời lượng:</strong> {movie.duration ? `${movie.duration} phút` : 'Chưa cập nhật'}</p>
-            <p><strong>Đánh giá:</strong> {movie.rating ? `★ ${movie.rating}` : 'Chưa có đánh giá'}</p>
-          </div>
-
-          <div className="mt-8">
-            <h2 className="text-xl font-semibold mb-4">Chọn suất chiếu</h2>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              {showtimes.map(showtime => (
-                <button
-                  key={showtime.id}
-                  onClick={() => handleShowtimeSelect(showtime)}
-                  className={`
-                    p-3 rounded text-center
-                    ${selectedShowtime?.id === showtime.id
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 hover:bg-gray-200'
-                    }
-                  `}
-                >
-                  {new Date(showtime.time).toLocaleTimeString()}
-                </button>
-              ))}
-            </div>
-
-            {selectedShowtime && (
-              <>
-                <SeatSelection 
-                  showtimeId={selectedShowtime.id}
-                  onSeatsSelected={handleSeatsSelected}
-                />
-                <div className="mt-6">
-                  <p className="text-lg mb-2">
-                    Tổng tiền: {selectedShowtime.price * selectedSeats.length} VNĐ
-                  </p>
-                  <button
-                    onClick={handleBooking}
-                    disabled={selectedSeats.length === 0}
-                    className={`
-                      w-full py-3 rounded text-white
-                      ${selectedSeats.length === 0
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700'
-                      }
-                    `}
+            <h2 className="text-xl font-semibold mb-2">Lịch chiếu phim</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {showtimes.map((showtime) => {
+                const formattedTime = formatDateTime(showtime.time);
+                return (
+                  <div
+                    key={showtime.id}
+                    className="border rounded p-4 hover:bg-gray-50"
                   >
-                    Đặt vé
-                  </button>
-                </div>
-              </>
-            )}
+                    <p className="font-semibold">{formattedTime.date}</p>
+                    <p className="text-gray-600 mb-2">{formattedTime.time}</p>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-gray-700">
+                        <i className="fas fa-film mr-1"></i> {showtime.theater}
+                      </span>
+                      <span className="font-medium text-green-600">
+                        {formatCurrency(showtime.price)}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleBookSeats(showtime.id)}
+                      className="mt-2 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+                    >
+                      Đặt vé
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

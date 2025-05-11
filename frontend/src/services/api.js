@@ -2,20 +2,85 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
 
-// Movie APIs
-export const getMovies = () => axios.get(`${API_URL}/movies`);
-export const getMovie = (id) => axios.get(`${API_URL}/movies/${id}`);
-export const getShowtimes = (movieId) => axios.get(`${API_URL}/movies/${movieId}/showtimes`);
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
-// Seat APIs
-export const getSeats = (showtimeId) => axios.get(`${API_URL}/seats/showtime/${showtimeId}`);
-export const checkSeats = (showtimeId, seats) => 
-  axios.post(`${API_URL}/seats/check?showtime_id=${showtimeId}`, seats);
+// Auth APIs
+export const login = async (credentials) => {
+  try {
+    const response = await api.post('/auth/login', credentials);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const register = async (userData) => {
+  try {
+    const response = await api.post('/auth/register', userData);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Movie APIs
+export const getMovies = () => api.get('/movies');
+export const getMovieById = (id) => api.get(`/movies/${id}`);
+export const getShowtimes = (movieId) => api.get(`/movies/${movieId}/showtimes`);
 
 // Booking APIs
-export const createBooking = (bookingData) => axios.post(`${API_URL}/bookings`, bookingData);
-export const getCustomerBookings = (customerId) => axios.get(`${API_URL}/bookings/customer/${customerId}`);
+export const createBooking = async (bookingData) => {
+  try {
+    // Endpoint: POST /bookings
+    // Request body: 
+    // {
+    //   "customer_id": "string",
+    //   "movie_id": "string",
+    //   "showtime_id": "string",
+    //   "seats": ["string"],
+    //   "total_amount": 0,
+    //   "status": "pending"
+    // }
+    const response = await api.post('/bookings', bookingData);
+    return response;
+  } catch (error) {
+    console.error('Error creating booking:', error);
+    throw error;
+  }
+};
+
+export const getBookings = () => api.get('/bookings');
+export const getBookingById = (id) => api.get(`/bookings/${id}`);
 
 // Payment APIs
-export const createPayment = (paymentData) => axios.post(`${API_URL}/payments`, paymentData);
-export const getBookingPayments = (bookingId) => axios.get(`${API_URL}/payments/booking/${bookingId}`); 
+export const createPayment = (paymentData) => api.post('/payments', paymentData);
+export const getPayments = () => api.get('/payments');
+export const getPaymentById = (id) => api.get(`/payments/${id}`);
+
+// Seat APIs
+export const getSeats = (showtimeId) => api.get(`/seats/showtime/${showtimeId}`);
+export const bookSeats = (customer_id, movie_id, showtime_id, seats, total_amount, status) => api.post('/bookings', { customer_id, movie_id, showtime_id, seats, total_amount, status });
+
+// Customer APIs
+export const getProfile = () => {
+  const customerId = localStorage.getItem('customer_id');
+  if (!customerId) {
+    throw new Error('Customer ID not found');
+  }
+  return api.get(`/customers/${customerId}`);
+};
+
+export const updateProfile = (data) => {
+  const customerId = localStorage.getItem('customer_id');
+  if (!customerId) {
+    throw new Error('Customer ID not found');
+  }
+  return api.put(`/customers/${customerId}`, data);
+};
+
+export default api;

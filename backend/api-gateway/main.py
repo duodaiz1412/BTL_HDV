@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 import os
@@ -179,10 +179,38 @@ async def get_booking_payments(booking_id: str):
         return response.json()
 
 # Customer Routes
-@app.post("/customers")
-async def create_customer(customer: dict):
+@app.post("/auth/login")
+async def login(customer: dict):
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{CUSTOMER_SERVICE_URL}/customers/login",
+            params={"email": customer.get("email"), "password": customer.get("password")}
+        )
+        if response.status_code != 200:
+            # Nếu Customer Service trả về lỗi, chuyển tiếp lỗi đó đến client
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=response.json().get("detail", "Lỗi xác thực")
+            )
+        
+        # Trả về response đúng format cho frontend
+        data = response.json()
+        # Đảm bảo response có customer_id
+        if "customer_id" not in data:
+            raise HTTPException(status_code=500, detail="Invalid response from customer service")
+            
+        return data
+
+@app.post("/auth/register")
+async def register(customer: dict):
     async with httpx.AsyncClient() as client:
         response = await client.post(f"{CUSTOMER_SERVICE_URL}/customers", json=customer)
+        if response.status_code != 200:
+            # Nếu Customer Service trả về lỗi, chuyển tiếp lỗi đó đến client
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=response.json().get("detail", "Lỗi khi đăng ký")
+            )
         return response.json()
 
 @app.get("/customers/{customer_id}")
