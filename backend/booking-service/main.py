@@ -5,7 +5,8 @@ from typing import List, Optional
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import aiokafka
+import boto3
+from botocore.exceptions import ClientError
 import json
 from bson import ObjectId
 import asyncio
@@ -18,34 +19,20 @@ app = FastAPI(title="Booking Service")
 client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
 db = client.booking_db
 
-# Kafka producer
-kafka_producer = None
+# AWS SQS client
+sqs = boto3.client('sqs',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION')
+)
 
-async def get_kafka_producer():
-    global kafka_producer
-    if kafka_producer is None:
-        max_retries = 5
-        retry_count = 0
-        while retry_count < max_retries:
-            try:
-                kafka_producer = aiokafka.AIOKafkaProducer(
-                    bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"),
-                    retry_backoff_ms=500,
-                    request_timeout_ms=30000
-                )
-                await kafka_producer.start()
-                return kafka_producer
-            except Exception as e:
-                retry_count += 1
-                print(f"Failed to connect to Kafka (attempt {retry_count}/{max_retries}): {e}")
-                if retry_count == max_retries:
-                    print("Max retries reached. Starting service without Kafka producer.")
-                    return None
-                await asyncio.sleep(5)  # Wait 5 seconds before retrying
-    return kafka_producer
+# SQS Queue URLs
+BOOKING_CREATED_QUEUE_URL = os.getenv('SQS_BOOKING_CREATED_URL')
+PAYMENT_PROCESSED_QUEUE_URL = os.getenv('SQS_PAYMENT_PROCESSED_URL')
+SEATS_BOOKED_QUEUE_URL = os.getenv('SQS_SEATS_BOOKED_URL')
 
 # Models
-class BookingCreate(BaseModel):
+class BookingBase(BaseModel):
     customer_id: str
     movie_id: str
     showtime_id: str
@@ -53,37 +40,38 @@ class BookingCreate(BaseModel):
     total_amount: float
     status: str = "pending"
 
-class Booking(BookingCreate):
-    payment_id: Optional[str] = None
-
 # Helper functions
 def convert_mongo_id(booking):
-    if booking:
-        booking["id"] = str(booking["_id"])
-        del booking["_id"]
+    booking["_id"] = str(booking["_id"])
     return booking
+
+async def send_sqs_message(queue_url, message):
+    try:
+        response = sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(message)
+        )
+        return response
+    except ClientError as e:
+        print(f"Error sending message to SQS: {e}")
+        return None
 
 # Routes
 @app.post("/bookings")
-async def create_booking(booking: BookingCreate):
-    booking_dict = booking.dict()
-    booking_dict["created_at"] = datetime.now().isoformat()
-    result = await db.bookings.insert_one(booking_dict)
-    booking_dict["id"] = str(result.inserted_id)
-    if "_id" in booking_dict:
-        del booking_dict["_id"]
-    
+async def create_booking(booking: BookingBase):
     try:
-        producer = await get_kafka_producer()
-        if producer:
-            await producer.send_and_wait(
-                "booking_created",
-                json.dumps(booking_dict).encode()
-            )
+        # Create booking in MongoDB
+        booking_dict = booking.dict()
+        booking_dict["created_at"] = datetime.utcnow()
+        result = await db.bookings.insert_one(booking_dict)
+        booking_dict["_id"] = str(result.inserted_id)
+
+        # Send message to SQS
+        await send_sqs_message(BOOKING_CREATED_QUEUE_URL, booking_dict)
+        
+        return convert_mongo_id(booking_dict)
     except Exception as e:
-        print(f"Error sending message to Kafka: {e}")
-    
-    return booking_dict
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/bookings/{booking_id}")
 async def get_booking(booking_id: str):
@@ -94,6 +82,11 @@ async def get_booking(booking_id: str):
         return convert_mongo_id(booking)
     except:
         raise HTTPException(status_code=400, detail="Invalid booking ID format")
+
+@app.get("/bookings/customer/{customer_id}")
+async def get_customer_bookings(customer_id: str):
+    bookings = await db.bookings.find({"customer_id": customer_id}).to_list(length=None)
+    return [convert_mongo_id(booking) for booking in bookings]
 
 @app.put("/bookings/{booking_id}/status")
 async def update_booking_status(booking_id: str, status: str):
@@ -107,11 +100,6 @@ async def update_booking_status(booking_id: str, status: str):
         return {"message": "Booking status updated successfully"}
     except:
         raise HTTPException(status_code=400, detail="Invalid booking ID format")
-
-@app.get("/bookings/customer/{customer_id}")
-async def get_customer_bookings(customer_id: str):
-    bookings = await db.bookings.find({"customer_id": customer_id}).to_list(length=None)
-    return [convert_mongo_id(booking) for booking in bookings]
 
 @app.get("/showtimes")
 async def get_all_showtimes():
@@ -135,5 +123,5 @@ async def get_all_notifications():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    if kafka_producer:
-        await kafka_producer.stop() 
+    # No need to stop SQS client as it's managed by AWS
+    pass 

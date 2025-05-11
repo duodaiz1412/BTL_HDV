@@ -5,7 +5,8 @@ from typing import List, Optional
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import aiokafka
+import boto3
+from botocore.exceptions import ClientError
 import json
 from bson import ObjectId
 
@@ -17,35 +18,41 @@ app = FastAPI(title="Seat Service")
 client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
 db = client.seat_db
 
-# Kafka producer
-kafka_producer = None
+# AWS SQS client
+sqs = boto3.client('sqs',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION')
+)
 
-async def get_kafka_producer():
-    global kafka_producer
-    if kafka_producer is None:
-        kafka_producer = aiokafka.AIOKafkaProducer(
-            bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-        )
-        await kafka_producer.start()
-    return kafka_producer
+# SQS Queue URLs
+SEATS_BOOKED_QUEUE_URL = os.getenv('SQS_SEATS_BOOKED_URL')
 
 # Models
-class Seat(BaseModel):
+class SeatBase(BaseModel):
     showtime_id: str
     seat_number: str
     status: str = "available"
-    price: float
 
 # Helper functions
 def convert_mongo_id(seat):
-    if seat:
-        seat["id"] = str(seat["_id"])
-        del seat["_id"]
+    seat["_id"] = str(seat["_id"])
     return seat
+
+async def send_sqs_message(queue_url, message):
+    try:
+        response = sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(message)
+        )
+        return response
+    except ClientError as e:
+        print(f"Error sending message to SQS: {e}")
+        return None
 
 # Routes
 @app.post("/seats")
-async def create_seat(seat: Seat):
+async def create_seat(seat: SeatBase):
     seat_dict = seat.dict()
     seat_dict["created_at"] = datetime.now().isoformat()
     
@@ -85,49 +92,52 @@ async def update_seat_status(seat_id: str, status: str):
 
 @app.post("/seats/check")
 async def check_seats(showtime_id: str, seats: List[str]):
-    # Check if seats are available
-    unavailable_seats = await db.seats.find({
-        "showtime_id": showtime_id,
-        "seat_number": {"$in": seats},
-        "status": "booked"
-    }).to_list(length=None)
-    
-    if unavailable_seats:
-        raise HTTPException(status_code=400, detail="Some seats are already booked")
-    
-    return {"message": "Seats are available"}
+    try:
+        # Check if seats are available
+        for seat_number in seats:
+            seat = await db.seats.find_one({
+                "showtime_id": showtime_id,
+                "seat_number": seat_number,
+                "status": "available"
+            })
+            if not seat:
+                raise HTTPException(status_code=400, detail=f"Seat {seat_number} is not available")
+        return {"message": "All seats are available"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/seats/book")
-async def book_seats(showtime_id: str, seats: List[str], booking_id: str):
-    # Book seats
-    result = await db.seats.update_many(
-        {
-            "showtime_id": showtime_id,
-            "seat_number": {"$in": seats}
-        },
-        {
-            "$set": {
-                "status": "booked",
-                "booking_id": booking_id
-            }
-        }
-    )
-    
-    if result.modified_count == 0:
-        raise HTTPException(status_code=400, detail="Failed to book seats")
-    
-    # Send event to Kafka
-    producer = await get_kafka_producer()
-    await producer.send_and_wait(
-        "seats_booked",
-        json.dumps({
+async def book_seats(showtime_id: str, seats: List[str]):
+    try:
+        # Check seats availability first
+        await check_seats(showtime_id, seats)
+        
+        # Update seats status
+        result = await db.seats.update_many(
+            {
+                "showtime_id": showtime_id,
+                "seat_number": {"$in": seats}
+            },
+            {"$set": {"status": "booked", "booked_at": datetime.utcnow()}}
+        )
+        
+        if result.modified_count != len(seats):
+            raise HTTPException(status_code=500, detail="Failed to book all seats")
+        
+        # Send message to SQS
+        await send_sqs_message(SEATS_BOOKED_QUEUE_URL, {
             "showtime_id": showtime_id,
             "seats": seats,
-            "booking_id": booking_id
-        }).encode()
-    )
-    
-    return {"message": "Seats booked successfully"}
+            "booked_at": datetime.utcnow().isoformat()
+        })
+        
+        return {"message": "Seats booked successfully"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/seats/release")
 async def release_seats(showtime_id: str, seats: List[str]):
@@ -150,7 +160,31 @@ async def release_seats(showtime_id: str, seats: List[str]):
     
     return {"message": "Seats released successfully"}
 
+@app.get("/seats")
+async def get_all_seats():
+    seats = await db.seats.find().to_list(length=None)
+    return [convert_mongo_id(seat) for seat in seats]
+
+@app.post("/seats/initialize")
+async def initialize_seats(showtime_id: str, total_seats: int):
+    try:
+        # Create seats for the showtime
+        seats = []
+        for i in range(1, total_seats + 1):
+            seat = {
+                "showtime_id": showtime_id,
+                "seat_number": f"A{i}",
+                "status": "available",
+                "created_at": datetime.utcnow()
+            }
+            seats.append(seat)
+        
+        result = await db.seats.insert_many(seats)
+        return {"message": f"Initialized {len(result.inserted_ids)} seats"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.on_event("shutdown")
 async def shutdown_event():
-    if kafka_producer:
-        await kafka_producer.stop() 
+    # No need to stop SQS client as it's managed by AWS
+    pass 

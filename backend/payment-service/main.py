@@ -5,7 +5,8 @@ from typing import Optional
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import aiokafka
+import boto3
+from botocore.exceptions import ClientError
 import json
 from bson import ObjectId
 
@@ -17,20 +18,18 @@ app = FastAPI(title="Payment Service")
 client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
 db = client.payment_db
 
-# Kafka producer
-kafka_producer = None
+# AWS SQS client
+sqs = boto3.client('sqs',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION')
+)
 
-async def get_kafka_producer():
-    global kafka_producer
-    if kafka_producer is None:
-        kafka_producer = aiokafka.AIOKafkaProducer(
-            bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-        )
-        await kafka_producer.start()
-    return kafka_producer
+# SQS Queue URLs
+PAYMENT_PROCESSED_QUEUE_URL = os.getenv('SQS_PAYMENT_PROCESSED_URL')
 
 # Models
-class Payment(BaseModel):
+class PaymentBase(BaseModel):
     booking_id: str
     amount: float
     payment_method: str
@@ -38,29 +37,36 @@ class Payment(BaseModel):
 
 # Helper functions
 def convert_mongo_id(payment):
-    if payment:
-        payment["id"] = str(payment["_id"])
-        del payment["_id"]
+    payment["_id"] = str(payment["_id"])
     return payment
+
+async def send_sqs_message(queue_url, message):
+    try:
+        response = sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(message)
+        )
+        return response
+    except ClientError as e:
+        print(f"Error sending message to SQS: {e}")
+        return None
 
 # Routes
 @app.post("/payments")
-async def create_payment(payment: Payment):
-    payment_dict = payment.dict()
-    payment_dict["created_at"] = datetime.now().isoformat()
-    
-    result = await db.payments.insert_one(payment_dict)
-    payment_dict["id"] = str(result.inserted_id)
-    del payment_dict["_id"]
-    
-    # Send notification
-    producer = await get_kafka_producer()
-    await producer.send_and_wait(
-        "payment_processed",
-        json.dumps(payment_dict).encode()
-    )
-    
-    return payment_dict
+async def create_payment(payment: PaymentBase):
+    try:
+        # Create payment in MongoDB
+        payment_dict = payment.dict()
+        payment_dict["created_at"] = datetime.utcnow()
+        result = await db.payments.insert_one(payment_dict)
+        payment_dict["_id"] = str(result.inserted_id)
+
+        # Send message to SQS
+        await send_sqs_message(PAYMENT_PROCESSED_QUEUE_URL, payment_dict)
+        
+        return convert_mongo_id(payment_dict)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/payments/{payment_id}")
 async def get_payment(payment_id: str):
@@ -114,16 +120,12 @@ async def refund_payment(payment_id: str):
         }
     )
 
-    # Send event to Kafka
-    producer = await get_kafka_producer()
-    await producer.send_and_wait(
-        "payment_refunded",
-        json.dumps({
-            "payment_id": payment_id,
-            "booking_id": payment["booking_id"],
-            "refund_id": refund_id
-        }).encode()
-    )
+    # Send event to SQS
+    await send_sqs_message(PAYMENT_PROCESSED_QUEUE_URL, {
+        "payment_id": payment_id,
+        "booking_id": payment["booking_id"],
+        "refund_id": refund_id
+    })
 
     return {
         "message": "Payment refunded successfully",
@@ -132,5 +134,5 @@ async def refund_payment(payment_id: str):
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    if kafka_producer:
-        await kafka_producer.stop() 
+    # No need to stop SQS client as it's managed by AWS
+    pass 

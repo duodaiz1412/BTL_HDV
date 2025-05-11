@@ -5,7 +5,8 @@ from typing import Optional
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import aiokafka
+import boto3
+from botocore.exceptions import ClientError
 import json
 import aiohttp
 from jinja2 import Template
@@ -20,8 +21,25 @@ app = FastAPI(title="Notification Service")
 client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
 db = client.notification_db
 
-# Kafka consumer
-kafka_consumer = None
+# AWS SQS client
+sqs = boto3.client('sqs',
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION')
+)
+
+# SQS Queue URLs
+BOOKING_CREATED_QUEUE_URL = os.getenv('SQS_BOOKING_CREATED_URL')
+PAYMENT_PROCESSED_QUEUE_URL = os.getenv('SQS_PAYMENT_PROCESSED_URL')
+
+# Models
+class Notification(BaseModel):
+    type: str
+    customer_id: str
+    content: str
+    status: str = "pending"
+    booking_id: Optional[str] = None
+    payment_id: Optional[str] = None
 
 # Email template
 email_template = """
@@ -41,58 +59,109 @@ Best regards,
 Movie Booking System
 """
 
-async def get_kafka_consumer():
-    global kafka_consumer
-    if kafka_consumer is None:
-        max_retries = 5
-        retry_count = 0
-        while retry_count < max_retries:
-            try:
-                kafka_consumer = aiokafka.AIOKafkaConsumer(
-                    "booking_created",
-                    "payment_processed",
-                    bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"),
-                    group_id="notification-service",
-                    retry_backoff_ms=500,
-                    request_timeout_ms=30000
-                )
-                await kafka_consumer.start()
-                return kafka_consumer
-            except Exception as e:
-                retry_count += 1
-                print(f"Failed to connect to Kafka (attempt {retry_count}/{max_retries}): {e}")
-                if retry_count == max_retries:
-                    print("Max retries reached. Starting service without Kafka consumer.")
-                    return None
-                await asyncio.sleep(5)  # Wait 5 seconds before retrying
-    return kafka_consumer
-
-# Models
-class Notification(BaseModel):
-    customer_id: str
-    type: str
-    message: str
-    status: str = "pending"
-    sent_at: Optional[datetime] = None
-
 # Helper functions
 def convert_mongo_id(notification):
-    if notification:
-        notification["id"] = str(notification["_id"])
-        del notification["_id"]
+    notification["_id"] = str(notification["_id"])
     return notification
+
+async def receive_sqs_messages(queue_url):
+    try:
+        response = sqs.receive_message(
+            QueueUrl=queue_url,
+            MaxNumberOfMessages=10,
+            WaitTimeSeconds=20
+        )
+        return response.get('Messages', [])
+    except ClientError as e:
+        print(f"Error receiving messages from SQS: {e}")
+        return []
+
+async def delete_sqs_message(queue_url, receipt_handle):
+    try:
+        sqs.delete_message(
+            QueueUrl=queue_url,
+            ReceiptHandle=receipt_handle
+        )
+    except ClientError as e:
+        print(f"Error deleting message from SQS: {e}")
+
+async def process_booking_notification(message):
+    try:
+        booking_data = json.loads(message['Body'])
+        template = Template(email_template)
+        email_content = template.render(
+            customer_name=booking_data.get('customer_name', 'Customer'),
+            movie_title=booking_data.get('movie_title', 'Movie'),
+            showtime=booking_data.get('showtime', 'Showtime'),
+            seats=booking_data.get('seats', []),
+            total_amount=booking_data.get('total_amount', 0)
+        )
+        
+        # Store notification in MongoDB
+        notification = {
+            "type": "booking_confirmation",
+            "customer_id": booking_data.get('customer_id'),
+            "booking_id": booking_data.get('_id'),
+            "content": email_content,
+            "status": "pending",
+            "created_at": datetime.utcnow()
+        }
+        await db.notifications.insert_one(notification)
+        
+        # TODO: Send actual email using your email service
+        print(f"Email would be sent: {email_content}")
+        
+    except Exception as e:
+        print(f"Error processing booking notification: {e}")
+
+async def process_payment_notification(message):
+    try:
+        payment_data = json.loads(message['Body'])
+        # Process payment notification
+        notification = {
+            "type": "payment_confirmation",
+            "customer_id": payment_data.get('customer_id'),
+            "payment_id": payment_data.get('_id'),
+            "content": f"Payment of {payment_data.get('amount', 0)} has been processed successfully.",
+            "status": "pending",
+            "created_at": datetime.utcnow()
+        }
+        await db.notifications.insert_one(notification)
+        
+    except Exception as e:
+        print(f"Error processing payment notification: {e}")
+
+# Background task to process SQS messages
+async def process_sqs_messages():
+    while True:
+        try:
+            # Process booking notifications
+            booking_messages = await receive_sqs_messages(BOOKING_CREATED_QUEUE_URL)
+            for message in booking_messages:
+                await process_booking_notification(message)
+                await delete_sqs_message(BOOKING_CREATED_QUEUE_URL, message['ReceiptHandle'])
+            
+            # Process payment notifications
+            payment_messages = await receive_sqs_messages(PAYMENT_PROCESSED_QUEUE_URL)
+            for message in payment_messages:
+                await process_payment_notification(message)
+                await delete_sqs_message(PAYMENT_PROCESSED_QUEUE_URL, message['ReceiptHandle'])
+            
+            await asyncio.sleep(1)  # Wait before next poll
+        except Exception as e:
+            print(f"Error in SQS message processing: {e}")
+            await asyncio.sleep(5)  # Wait longer on error
 
 # Routes
 @app.post("/notifications")
 async def create_notification(notification: Notification):
     notification_dict = notification.dict()
-    notification_dict["created_at"] = datetime.now().isoformat()
+    notification_dict["created_at"] = datetime.utcnow()
     
     result = await db.notifications.insert_one(notification_dict)
-    notification_dict["id"] = str(result.inserted_id)
-    del notification_dict["_id"]
+    notification_dict["_id"] = str(result.inserted_id)
     
-    return notification_dict
+    return convert_mongo_id(notification_dict)
 
 @app.get("/notifications/{notification_id}")
 async def get_notification(notification_id: str):
@@ -122,101 +191,7 @@ async def update_notification_status(notification_id: str, status: str):
     except:
         raise HTTPException(status_code=400, detail="Invalid notification ID format")
 
-async def process_booking_notification(booking_data):
-    # Get customer and movie details
-    customer = await db.customers.find_one({"_id": booking_data["customer_id"]})
-    movie = await db.movies.find_one({"_id": booking_data["movie_id"]})
-    
-    if not customer or not movie:
-        return
-    
-    # Prepare email content
-    template = Template(email_template)
-    email_content = template.render(
-        customer_name=customer["name"],
-        movie_title=movie["title"],
-        showtime=booking_data["showtime"],
-        seats=", ".join(booking_data["seats"]),
-        total_amount=booking_data["total_amount"]
-    )
-    
-    # Send email (simulated)
-    # In a real application, this would use an email service
-    print(f"Sending email to {customer['email']}:")
-    print(email_content)
-    
-    # Create notification record
-    notification = Notification(
-        customer_id=customer["_id"],
-        type="booking_confirmation",
-        message=email_content,
-        status="sent",
-        sent_at=datetime.now().isoformat()
-    )
-    await db.notifications.insert_one(notification.dict())
-
-async def process_payment_notification(payment_data):
-    # Get booking details
-    booking = await db.bookings.find_one({"_id": payment_data["booking_id"]})
-    if not booking:
-        return
-    
-    # Get customer details
-    customer = await db.customers.find_one({"_id": booking["customer_id"]})
-    if not customer:
-        return
-    
-    # Prepare email content
-    message = f"""
-    Dear {customer['name']},
-    
-    Your payment for booking {booking['_id']} has been processed.
-    Status: {payment_data['status']}
-    Transaction ID: {payment_data['transaction_id']}
-    
-    Best regards,
-    Movie Booking System
-    """
-    
-    # Send email (simulated)
-    # In a real application, this would use an email service
-    print(f"Sending email to {customer['email']}:")
-    print(message)
-    
-    # Create notification record
-    notification = Notification(
-        customer_id=customer["_id"],
-        type="payment_confirmation",
-        message=message,
-        status="sent",
-        sent_at=datetime.now().isoformat()
-    )
-    await db.notifications.insert_one(notification.dict())
-
+# Start background task
 @app.on_event("startup")
 async def startup_event():
-    try:
-        consumer = await get_kafka_consumer()
-        if consumer:
-            asyncio.create_task(consume_messages(consumer))
-    except Exception as e:
-        print(f"Error starting Kafka consumer: {e}")
-
-async def consume_messages(consumer):
-    try:
-        async for message in consumer:
-            try:
-                data = json.loads(message.value.decode())
-                if message.topic == "booking_created":
-                    await process_booking_notification(data)
-                elif message.topic == "payment_processed":
-                    await process_payment_notification(data)
-            except Exception as e:
-                print(f"Error processing message: {e}")
-    except Exception as e:
-        print(f"Error in consume_messages: {e}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    if kafka_consumer:
-        await kafka_consumer.stop() 
+    asyncio.create_task(process_sqs_messages()) 

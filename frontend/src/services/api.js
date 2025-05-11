@@ -5,11 +5,12 @@ const API_URL = 'http://localhost:8000';
 // Movie APIs
 export const getMovies = () => axios.get(`${API_URL}/movies`);
 export const getMovie = (id) => axios.get(`${API_URL}/movies/${id}`);
-export const getShowtimes = (movieId) => axios.get(`${API_URL}/showtimes/${movieId}`);
+export const getShowtimes = (movieId) => axios.get(`${API_URL}/movies/${movieId}/showtimes`);
 
 // Seat APIs
 export const getSeats = (showtimeId) => axios.get(`${API_URL}/seats/showtime/${showtimeId}`);
-export const checkSeats = (showtimeId, seats) => axios.post(`${API_URL}/seats/check`, { showtimeId, seats });
+export const checkSeats = (showtimeId, seats) => 
+  axios.post(`${API_URL}/seats/check?showtime_id=${showtimeId}`, seats);
 
 // Booking APIs
 export const createBooking = (bookingData) => axios.post(`${API_URL}/bookings`, bookingData);
