@@ -21,9 +21,9 @@ const SeatSelection = ({ showtimeId, onSeatsSelected }) => {
   const handleSeatClick = async (seat) => {
     if (seat.status === 'booked') return;
 
-    const newSelectedSeats = selectedSeats.includes(seat.seat_number)
-      ? selectedSeats.filter(s => s !== seat.seat_number)
-      : [...selectedSeats, seat.seat_number];
+    const newSelectedSeats = selectedSeats.includes(seat.id)
+      ? selectedSeats.filter(s => s !== seat.id)
+      : [...selectedSeats, seat.id];
 
     setSelectedSeats(newSelectedSeats);
 
@@ -34,7 +34,7 @@ const SeatSelection = ({ showtimeId, onSeatsSelected }) => {
       }
     } catch (err) {
       setError('Ghế đã được đặt');
-      setSelectedSeats(selectedSeats.filter(s => s !== seat.seat_number));
+      setSelectedSeats(selectedSeats.filter(s => s !== seat.id));
     }
   };
 
@@ -52,7 +52,7 @@ const SeatSelection = ({ showtimeId, onSeatsSelected }) => {
               p-2 rounded text-center
               ${seat.status === 'booked' 
                 ? 'bg-gray-300 cursor-not-allowed' 
-                : selectedSeats.includes(seat.seat_number)
+                : selectedSeats.includes(seat.id)
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 hover:bg-gray-200'
               }

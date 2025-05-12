@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -10,13 +10,16 @@ from botocore.exceptions import ClientError
 import json
 from bson import ObjectId
 import asyncio
+import httpx
 
 load_dotenv()
 
 app = FastAPI(title="Booking Service")
 
 # MongoDB connection
-client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+# Sử dụng URI của MongoDB Atlas nếu có, nếu không thì dùng kết nối local
+MONGODB_URI = os.getenv("MONGODB_URI")
+client = AsyncIOMotorClient(MONGODB_URI)
 db = client.booking_db
 
 # AWS SQS client
@@ -32,11 +35,16 @@ PAYMENT_PROCESSED_QUEUE_URL = os.getenv('SQS_PAYMENT_PROCESSED_URL')
 SEATS_BOOKED_QUEUE_URL = os.getenv('SQS_SEATS_BOOKED_URL')
 
 # Models
+class SeatInfo(BaseModel):
+    seat_id: str
+    seat_number: str
+
 class BookingBase(BaseModel):
     customer_id: str
     movie_id: str
     showtime_id: str
-    seats: List[str]
+    showtime: str
+    seats: List[SeatInfo]  # Danh sách các seat chứa cả seat_id và seat_number
     total_amount: float
     status: str = "pending"
 
@@ -74,6 +82,17 @@ async def create_booking(booking: BookingBase):
 
         # Send message to SQS
         await send_sqs_message(BOOKING_CREATED_QUEUE_URL, sqs_message)
+        
+        # Cập nhật trạng thái ghế thành "pending"
+        async with httpx.AsyncClient() as client:
+            for seat in booking.seats:
+                try:
+                    await client.put(
+                        f"{os.getenv('SEAT_SERVICE_URL', 'http://seat-service:8000')}/seats/{seat.seat_id}/status",
+                        params={"status": "pending"}
+                    )
+                except Exception as e:
+                    print(f"Error updating seat status: {e}")
         
         return convert_mongo_id(booking_dict)
     except Exception as e:

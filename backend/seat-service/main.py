@@ -15,7 +15,9 @@ load_dotenv()
 app = FastAPI(title="Seat Service")
 
 # MongoDB connection
-client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+# Sử dụng URI của MongoDB Atlas nếu có, nếu không thì dùng kết nối local
+MONGODB_URI = os.getenv("MONGODB_URI")
+client = AsyncIOMotorClient(MONGODB_URI)
 db = client.seat_db
 
 # AWS SQS client
@@ -181,6 +183,45 @@ async def initialize_seats(showtime_id: str, total_seats: int):
         
         result = await db.seats.insert_many(seats)
         return {"message": f"Initialized {len(result.inserted_ids)} seats"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/seats/create-for-showtime")
+async def create_seats_for_showtime(showtime_id: str):
+    try:
+        # Kiểm tra xem đã có ghế cho showtime này chưa
+        existing_seats = await db.seats.find({"showtime_id": showtime_id}).to_list(length=None)
+        if existing_seats:
+            return {"message": f"Seats already exist for showtime {showtime_id}", "seats_count": len(existing_seats)}
+        
+        # Tạo danh sách các ghế từ A1-E10
+        rows = ['A', 'B', 'C', 'D', 'E']
+        seats = []
+        
+        for row in rows:
+            for num in range(1, 11):  # 1-10
+                seat = {
+                    "showtime_id": showtime_id,
+                    "seat_number": f"{row}{num}",
+                    "status": "available",
+                    "created_at": datetime.utcnow()
+                }
+                seats.append(seat)
+        
+        # Lưu tất cả ghế vào database
+        result = await db.seats.insert_many(seats)
+        
+        # Gửi thông báo qua SQS (nếu cần thiết)
+        # await send_sqs_message(SEATS_BOOKED_QUEUE_URL, {
+        #     "showtime_id": showtime_id,
+        #     "action": "seats_created",
+        #     "count": len(result.inserted_ids)
+        # })
+        
+        return {
+            "message": f"Created {len(result.inserted_ids)} seats for showtime {showtime_id}",
+            "seat_count": len(result.inserted_ids)
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

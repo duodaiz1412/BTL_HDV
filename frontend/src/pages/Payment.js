@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getBookingById, createPayment } from '../services/api';
+import { toast } from 'react-toastify';
 
 const Payment = () => {
   const { bookingId } = useParams();
@@ -49,12 +50,14 @@ const Payment = () => {
       // Xóa movie_id và showtime_id khỏi localStorage vì đã hoàn tất đặt vé
       localStorage.removeItem('selected_movie_id');
       localStorage.removeItem('selected_showtime_id');
+      localStorage.removeItem('selected_showtime'); // Xóa thông tin thời gian chiếu
       
       // Chuyển đến trang xác nhận thanh toán
       navigate(`/bookings/${bookingId}/confirmation`);
     } catch (err) {
       console.error('Lỗi khi thanh toán:', err);
       setError('Không thể hoàn tất thanh toán. Vui lòng thử lại sau.');
+      toast.error('Thanh toán thất bại! Vui lòng thử lại sau.');
     } finally {
       setProcessing(false);
     }
@@ -96,7 +99,7 @@ const Payment = () => {
             </div>
             <div className="flex justify-between mb-2">
               <span>Ghế:</span>
-              <span className="font-medium">{booking.seats?.join(', ') || 'Thông tin không có sẵn'}</span>
+              <span className="font-medium">{booking.seats?.map(seat => seat.seat_number).join(', ') || 'Thông tin không có sẵn'}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span>Số lượng:</span>

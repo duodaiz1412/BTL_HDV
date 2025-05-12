@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import NotificationBell from './NotificationBell';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ const Navbar = () => {
         <Link to="/" className="text-xl font-bold">
           Movie Booking
         </Link>
-        <div className="space-x-4">
+        <div className="flex items-center space-x-4">
           <Link to="/" className="hover:text-gray-300">
             Trang chủ
           </Link>
@@ -28,6 +29,7 @@ const Navbar = () => {
               <Link to="/profile" className="hover:text-gray-300">
                 Tài khoản
               </Link>
+              <NotificationBell />
               <button
                 onClick={handleLogout}
                 className="hover:text-gray-300"

@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # MongoDB
+  # MongoDB (giữ lại cho trường hợp cần dùng local)
   mongodb:
     image: mongo:latest
     ports:
@@ -17,15 +17,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-      - AWS_ACCESS_KEY_ID=AKIAVXZ2UJQZQZQZQZQZ
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
+      - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
+      - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
       - SQS_BOOKING_CREATED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/booking-created
       - SQS_PAYMENT_PROCESSED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/payment-processed
       - SQS_SEATS_BOOKED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/seats-booked
-    depends_on:
-      - mongodb
     networks:
       - app-network
 
@@ -35,12 +33,10 @@ services:
     ports:
       - "8001:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-      - AWS_ACCESS_KEY_ID=AKIAVXZ2UJQZQZQZQZQZ
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
+      - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
+      - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
-    depends_on:
-      - mongodb
     networks:
       - app-network
 
@@ -50,15 +46,13 @@ services:
     ports:
       - "8002:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-      - AWS_ACCESS_KEY_ID=AKIAVXZ2UJQZQZQZQZQZ
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
+      - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
+      - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
       - SQS_BOOKING_CREATED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/booking-created
       - SQS_PAYMENT_PROCESSED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/payment-processed
       - SQS_SEATS_BOOKED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/seats-booked
-    depends_on:
-      - mongodb
     networks:
       - app-network
 
@@ -68,12 +62,10 @@ services:
     ports:
       - "8003:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-      - AWS_ACCESS_KEY_ID=AKIAVXZ2UJQZQZQZQZQZ
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
+      - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
+      - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
-    depends_on:
-      - mongodb
     networks:
       - app-network
 
@@ -83,13 +75,11 @@ services:
     ports:
       - "8004:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-      - AWS_ACCESS_KEY_ID=AKIAVXZ2UJQZQZQZQZQZ
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
+      - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
+      - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
       - SQS_PAYMENT_PROCESSED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/payment-processed
-    depends_on:
-      - mongodb
     networks:
       - app-network
 
@@ -99,13 +89,11 @@ services:
     ports:
       - "8005:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-      - AWS_ACCESS_KEY_ID=AKIAVXZ2UJQZQZQZQZQZ
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
+      - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
+      - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
       - SQS_SEATS_BOOKED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/seats-booked
-    depends_on:
-      - mongodb
     networks:
       - app-network
 
@@ -113,16 +101,14 @@ services:
   notification-service:
     build: ./backend/notification-service
     ports:
-      - "8006:8000"
+      - "8007:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
+      - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
       - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX
       - AWS_SECRET_ACCESS_KEY=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
       - AWS_REGION=ap-southeast-2
       - SQS_BOOKING_CREATED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/booking-created
       - SQS_PAYMENT_PROCESSED_URL=https://sqs.ap-southeast-2.amazonaws.com/968998815328/payment-processed
-    depends_on:
-      - mongodb
     networks:
       - app-network
 

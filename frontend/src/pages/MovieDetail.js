@@ -32,11 +32,12 @@ const MovieDetail = () => {
   }, [movieId]);
 
   // Điều hướng đến trang chọn ghế
-  const handleBookSeats = (showtimeId) => {
+  const handleBookSeats = (showtimeId, showtimeTime) => {
     // Cập nhật movie_id vào localStorage khi người dùng chọn showtime
     // Không cần xóa movie_id tại đây, vì chúng ta vẫn cần nó cho đến khi đặt vé xong
     localStorage.setItem('selected_movie_id', movieId);
     localStorage.setItem('selected_showtime_id', showtimeId);
+    localStorage.setItem('selected_showtime', showtimeTime); // Lưu thời gian chiếu vào localStorage
     navigate(`/seats/showtime/${showtimeId}`);
   };
 
@@ -111,7 +112,7 @@ const MovieDetail = () => {
                       </span>
                     </div>
                     <button
-                      onClick={() => handleBookSeats(showtime.id)}
+                      onClick={() => handleBookSeats(showtime.id, showtime.time)}
                       className="mt-2 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
                     >
                       Đặt vé

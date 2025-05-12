@@ -55,7 +55,7 @@ const BookingDetail = () => {
                 </p>
                 <p className="text-gray-600">
                   <span className="font-medium">Seats:</span>{' '}
-                  {booking.seats.join(', ')}
+                  {booking.seats.map(seat => seat.seat_number).join(', ')}
                 </p>
               </div>
               <div>

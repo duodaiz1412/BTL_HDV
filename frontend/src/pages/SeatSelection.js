@@ -43,13 +43,14 @@ const SeatSelection = () => {
 
   // Xử lý chọn ghế
   const handleSeatClick = (seat) => {
-    if (seat.status === 'booked') return;
+    // Không cho phép chọn ghế đã có trạng thái booked, pending hoặc paid
+    if (seat.status === 'booked' || seat.status === 'pending' || seat.status === 'paid') return;
 
     setSelectedSeats((prev) => {
-      if (prev.includes(seat.seat_number)) {
-        return prev.filter((s) => s !== seat.seat_number);
+      if (prev.includes(seat._id)) {
+        return prev.filter((s) => s !== seat._id);
       }
-      return [...prev, seat.seat_number];
+      return [...prev, seat._id];
     });
   };
 
@@ -72,6 +73,9 @@ const SeatSelection = () => {
       const savedMovieId = localStorage.getItem('selected_movie_id');
       const movieId = savedMovieId || movieInfo?.id || (seats.length > 0 ? seats[0].movie_id : null);
       
+      // Lấy thông tin showtime từ localStorage
+      const showtimeValue = localStorage.getItem('selected_showtime');
+      
       if (!movieId) {
         setError('Không có thông tin phim');
         return;
@@ -80,14 +84,24 @@ const SeatSelection = () => {
       // Tính tổng tiền
       const totalAmount = selectedSeats.length * ticketPrice;
 
+      // Chuẩn bị thông tin ghế với cả seat_id và seat_number
+      const formattedSeats = selectedSeats.map(seatId => {
+        const seat = seats.find(s => s._id === seatId);
+        return {
+          seat_id: seatId,
+          seat_number: seat ? seat.seat_number : seatId
+        };
+      });
+
       // Tạo booking trực tiếp bằng cách sử dụng hàm bookSeats
       try {
         // Sử dụng bookSeats với đầy đủ tham số theo yêu cầu
         const bookingResponse = await bookSeats(
           customerId, 
           movieId, 
-          showtimeId, 
-          selectedSeats, 
+          showtimeId,
+          showtimeValue, // Thêm thông tin showtime vào booking
+          formattedSeats, 
           totalAmount, 
           "pending"
         );
@@ -147,24 +161,33 @@ const SeatSelection = () => {
             const numA = parseInt(a.seat_number.substring(1));
             const numB = parseInt(b.seat_number.substring(1));
             return numA - numB;
-          }).map(seat => (
-            <button
-              key={seat._id}
-              onClick={() => handleSeatClick(seat)}
-              disabled={seat.status === 'booked'}
-              className={`
-                w-10 h-10 flex items-center justify-center rounded
-                ${seat.status === 'booked' 
-                  ? 'bg-gray-400 cursor-not-allowed' 
-                  : selectedSeats.includes(seat.seat_number)
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 hover:bg-gray-300'
-                }
-              `}
-            >
-              {seat.seat_number.substring(1)}
-            </button>
-          ))}
+          }).map(seat => {
+            // Xác định nếu ghế không khả dụng (đã được đặt hoặc đang chờ thanh toán)
+            const isUnavailable = seat.status === 'booked' || seat.status === 'pending' || seat.status === 'paid';
+            
+            return (
+              <button
+                key={seat._id}
+                onClick={() => handleSeatClick(seat)}
+                disabled={isUnavailable}
+                className={`
+                  w-10 h-10 flex items-center justify-center rounded
+                  ${isUnavailable
+                    ? seat.status === 'pending' 
+                      ? 'bg-yellow-400 cursor-not-allowed' // Ghế đang chờ thanh toán
+                      : seat.status === 'paid'
+                        ? 'bg-red-500 cursor-not-allowed' // Ghế đã được thanh toán
+                        : 'bg-gray-400 cursor-not-allowed' // Ghế đã được đặt
+                    : selectedSeats.includes(seat._id)
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300'
+                  }
+                `}
+              >
+                {seat.seat_number.substring(1)}
+              </button>
+            );
+          })}
         </div>
       </div>
     ));
@@ -197,7 +220,12 @@ const SeatSelection = () => {
           <div className="flex justify-between mb-2">
             <span>Ghế đã chọn:</span>
             <span className="font-medium">
-              {selectedSeats.length > 0 ? selectedSeats.join(', ') : 'Chưa chọn ghế'}
+              {selectedSeats.length > 0 
+                ? seats
+                    .filter(seat => selectedSeats.includes(seat._id))
+                    .map(seat => seat.seat_number)
+                    .join(', ') 
+                : 'Chưa chọn ghế'}
             </span>
           </div>
           <div className="flex justify-between">
@@ -246,6 +274,14 @@ const SeatSelection = () => {
         <div className="flex items-center">
           <div className="w-6 h-6 bg-gray-400 rounded mr-2"></div>
           <span>Đã đặt</span>
+        </div>
+        <div className="flex items-center">
+          <div className="w-6 h-6 bg-yellow-400 rounded mr-2"></div>
+          <span>Đang chờ thanh toán</span>
+        </div>
+        <div className="flex items-center">
+          <div className="w-6 h-6 bg-red-500 rounded mr-2"></div>
+          <span>Đã thanh toán</span>
         </div>
         <div className="flex items-center">
           <div className="w-6 h-6 bg-blue-500 rounded mr-2"></div>

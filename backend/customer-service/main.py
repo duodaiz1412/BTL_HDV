@@ -13,7 +13,8 @@ load_dotenv()
 app = FastAPI(title="Customer Service")
 
 # MongoDB connection
-client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+MONGODB_URI = os.getenv("MONGODB_URI")
+client = AsyncIOMotorClient(MONGODB_URI)
 db = client.customer_db
 
 # Password hashing
@@ -64,15 +65,24 @@ async def create_customer(customer: CustomerCreate):
     return customer_dict
 
 @app.post("/customers/login")
-async def login(email: str, password: str):
-    customer = await db.customers.find_one({"email": email})
-    if not customer or not verify_password(password, customer["password"]):
+async def login(customer: dict):
+    email = customer.get("email")
+    password = customer.get("password")
+    
+    if not email or not password:
+        raise HTTPException(
+            status_code=400,
+            detail="Email and password are required"
+        )
+    
+    customer_doc = await db.customers.find_one({"email": email})
+    if not customer_doc or not verify_password(password, customer_doc["password"]):
         raise HTTPException(
             status_code=401,
             detail="Incorrect email or password"
         )
     
-    return {"message": "Login successful", "customer_id": str(customer["_id"])}
+    return {"message": "Login successful", "customer_id": str(customer_doc["_id"])}
 
 @app.get("/customers/{customer_id}")
 async def get_customer(customer_id: str):

@@ -12,7 +12,8 @@ load_dotenv()
 app = FastAPI(title="Movie Service")
 
 # MongoDB connection
-client = AsyncIOMotorClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+MONGODB_URI = os.getenv("MONGODB_URI")
+client = AsyncIOMotorClient(MONGODB_URI)
 db = client.movie_db
 
 # Models
