@@ -101,7 +101,7 @@ services:
   notification-service:
     build: ./backend/notification-service
     ports:
-      - "8007:8000"
+      - "8006:8000"
     environment:
       - MONGODB_URI=mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim
       - AWS_ACCESS_KEY_ID=AKIA6DHGUQZQGQMCRAHX

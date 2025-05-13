@@ -1,16 +1,21 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import boto3
+import aioboto3
 from botocore.exceptions import ClientError
 import json
 from bson import ObjectId
 import asyncio
 import httpx
+import logging
+
+# Cấu hình logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("booking-service")
 
 load_dotenv()
 
@@ -22,12 +27,8 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 client = AsyncIOMotorClient(MONGODB_URI)
 db = client.booking_db
 
-# AWS SQS client
-sqs = boto3.client('sqs',
-    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.getenv('AWS_REGION')
-)
+# SQS Session
+sqs_session = None
 
 # SQS Queue URLs
 BOOKING_CREATED_QUEUE_URL = os.getenv('SQS_BOOKING_CREATED_URL')
@@ -55,20 +56,32 @@ def convert_mongo_id(booking):
         booking["created_at"] = booking["created_at"].isoformat()
     return booking
 
+async def get_sqs_session():
+    """Tạo và trả về phiên aioboto3 được chia sẻ"""
+    global sqs_session
+    if sqs_session is None:
+        sqs_session = aioboto3.Session(
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
+    return sqs_session
+
 async def send_sqs_message(queue_url, message):
     try:
-        response = sqs.send_message(
-            QueueUrl=queue_url,
-            MessageBody=json.dumps(message)
-        )
-        return response
-    except ClientError as e:
-        print(f"Error sending message to SQS: {e}")
-        return None
+        session = await get_sqs_session()
+        async with session.resource('sqs') as sqs_resource:
+            queue = await sqs_resource.get_queue_by_url(QueueUrl=queue_url)
+            await queue.send_message(MessageBody=json.dumps(message))
+            logger.info(f"Message sent to SQS queue: {queue_url}")
+            return True
+    except Exception as e:
+        logger.error(f"Error sending message to SQS: {e}")
+        return False
 
 # Routes
-@app.post("/bookings")
-async def create_booking(booking: BookingBase):
+@app.post("/bookings", response_model=Dict[str, Any])
+async def create_booking(booking: BookingBase, background_tasks: BackgroundTasks):
     try:
         # Create booking in MongoDB
         booking_dict = booking.dict()
@@ -80,41 +93,50 @@ async def create_booking(booking: BookingBase):
         sqs_message = booking_dict.copy()
         sqs_message["created_at"] = sqs_message["created_at"].isoformat()
 
-        # Send message to SQS
-        await send_sqs_message(BOOKING_CREATED_QUEUE_URL, sqs_message)
+        # Send message to SQS in background task
+        background_tasks.add_task(send_sqs_message, BOOKING_CREATED_QUEUE_URL, sqs_message)
         
-        # Cập nhật trạng thái ghế thành "pending"
-        async with httpx.AsyncClient() as client:
-            for seat in booking.seats:
-                try:
-                    await client.put(
-                        f"{os.getenv('SEAT_SERVICE_URL', 'http://seat-service:8000')}/seats/{seat.seat_id}/status",
-                        params={"status": "pending"}
-                    )
-                except Exception as e:
-                    print(f"Error updating seat status: {e}")
+        # Cập nhật trạng thái ghế thành "pending" trong background task
+        async def update_seats():
+            async with httpx.AsyncClient() as client:
+                for seat in booking.seats:
+                    try:
+                        await client.put(
+                            f"{os.getenv('SEAT_SERVICE_URL', 'http://seat-service:8000')}/seats/{seat.seat_id}/status",
+                            params={"status": "pending"}
+                        )
+                    except Exception as e:
+                        logger.error(f"Error updating seat status: {e}")
+        
+        background_tasks.add_task(update_seats)
         
         return convert_mongo_id(booking_dict)
     except Exception as e:
+        logger.error(f"Error creating booking: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/bookings/{booking_id}")
+@app.get("/bookings/{booking_id}", response_model=Dict[str, Any])
 async def get_booking(booking_id: str):
     try:
         booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
         if not booking:
             raise HTTPException(status_code=404, detail="Booking not found")
         return convert_mongo_id(booking)
-    except:
+    except Exception as e:
+        logger.error(f"Error retrieving booking: {e}")
         raise HTTPException(status_code=400, detail="Invalid booking ID format")
 
-@app.get("/bookings/customer/{customer_id}")
+@app.get("/bookings/customer/{customer_id}", response_model=List[Dict[str, Any]])
 async def get_customer_bookings(customer_id: str):
-    bookings = await db.bookings.find({"customer_id": customer_id}).to_list(length=None)
-    return [convert_mongo_id(booking) for booking in bookings]
+    try:
+        bookings = await db.bookings.find({"customer_id": customer_id}).to_list(length=None)
+        return [convert_mongo_id(booking) for booking in bookings]
+    except Exception as e:
+        logger.error(f"Error retrieving customer bookings: {e}")
+        return []
 
-@app.put("/bookings/{booking_id}/status")
-async def update_booking_status(booking_id: str, status: str):
+@app.put("/bookings/{booking_id}/status", response_model=Dict[str, str])
+async def update_booking_status(booking_id: str, status: str, background_tasks: BackgroundTasks):
     try:
         result = await db.bookings.update_one(
             {"_id": ObjectId(booking_id)},
@@ -122,31 +144,41 @@ async def update_booking_status(booking_id: str, status: str):
         )
         if result.modified_count == 0:
             raise HTTPException(status_code=404, detail="Booking not found")
+        
+        # Nếu status là confirmed, gửi thông báo đến SQS
+        if status == "confirmed":
+            booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+            if booking:
+                booking_message = convert_mongo_id(booking)
+                background_tasks.add_task(send_sqs_message, SEATS_BOOKED_QUEUE_URL, booking_message)
+        
         return {"message": "Booking status updated successfully"}
-    except:
+    except Exception as e:
+        logger.error(f"Error updating booking status: {e}")
         raise HTTPException(status_code=400, detail="Invalid booking ID format")
 
-@app.get("/showtimes")
+@app.get("/showtimes", response_model=List[Dict[str, Any]])
 async def get_all_showtimes():
     showtimes = await db.showtimes.find().to_list(length=None)
     return [convert_mongo_id(showtime) for showtime in showtimes]
 
-@app.get("/seats")
+@app.get("/seats", response_model=List[Dict[str, Any]])
 async def get_all_seats():
     seats = await db.seats.find().to_list(length=None)
     return [convert_mongo_id(seat) for seat in seats]
 
-@app.get("/payments")
+@app.get("/payments", response_model=List[Dict[str, Any]])
 async def get_all_payments():
     payments = await db.payments.find().to_list(length=None)
     return [convert_mongo_id(payment) for payment in payments]
 
-@app.get("/notifications")
+@app.get("/notifications", response_model=List[Dict[str, Any]])
 async def get_all_notifications():
     notifications = await db.notifications.find().to_list(length=None)
     return [convert_mongo_id(notification) for notification in notifications]
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    # No need to stop SQS client as it's managed by AWS
-    pass 
+    global sqs_session
+    # Đóng SQS session khi shutdown
+    sqs_session = None 

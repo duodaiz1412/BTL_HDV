@@ -1,21 +1,44 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
-from datetime import datetime, time, timedelta
-import os
-from dotenv import load_dotenv
+import logging
+import socketio
+import asyncio
+from starlette.responses import StreamingResponse, Response
+from starlette.websockets import WebSocket
 import httpx
+from dotenv import load_dotenv
+import os
+from datetime import datetime, time, timedelta
+from typing import Optional, List
+from pydantic import BaseModel, EmailStr
+from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request
+import json
+
+# Thiết lập logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("api-gateway")
 
 load_dotenv()
 
+# Tạo FastAPI app
 app = FastAPI(title="API Gateway")
 
-# CORS middleware
+# Đọc cấu hình CORS từ biến môi trường hoặc mặc định
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
+try:
+    if CORS_ORIGINS != "*":
+        CORS_ORIGINS = json.loads(CORS_ORIGINS)  # Chuyển đổi chuỗi JSON sang list
+except:
+    # Nếu không thể parse JSON, sử dụng danh sách mặc định
+    CORS_ORIGINS = ["*"]
+
+# Cấu hình CORS riêng cho socketio
+socketio_cors_allowed_origins = "*"  # Cho phép tất cả các nguồn gốc
+
+# CORS middleware cho FastAPI
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Cho phép tất cả các nguồn gốc
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,6 +85,107 @@ class ShowtimeResponse(BaseModel):
     start_time: str
     end_time: str
     date: str
+
+# Khởi tạo Socket.IO server với cấu hình CORS nâng cao
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins="*",  # Cho phép tất cả các nguồn gốc
+    logger=True,
+    engineio_logger=True,
+    ping_timeout=60,
+    ping_interval=25,
+    max_http_buffer_size=1e8,
+    always_connect=True,  # Luôn cho phép kết nối
+    cors_credentials=True
+)
+
+# Định nghĩa namespace
+notification_namespace = '/'
+
+# Socket.IO events
+@sio.event
+async def connect(sid, environ, namespace=notification_namespace):
+    logger.info(f"Client connected: {sid}")
+    logger.info(f"Connection details: Headers: {environ.get('headers', {})}") 
+    logger.info(f"Connection details: Query: {environ.get('QUERY_STRING', '')}")
+    
+    client_origin = None
+    for key, value in environ.get('headers', {}).items():
+        if key.lower() == 'origin':
+            client_origin = value
+            break
+    
+    logger.info(f"Client origin: {client_origin}")
+    
+    # Lấy customer_id từ query string nếu có
+    query_params = environ.get('QUERY_STRING', '')
+    customer_id = None
+    for param in query_params.split('&'):
+        if param.startswith('customer_id='):
+            customer_id = param.split('=')[1]
+            break
+    
+    logger.info(f"Customer ID from query: {customer_id}")
+    
+    # Tự động đưa client vào phòng dựa trên customer_id
+    if customer_id:
+        room = f"customer_{customer_id}"
+        sio.enter_room(sid, room, namespace=namespace)
+        logger.info(f"Đã đưa client {sid} vào phòng {room}")
+    
+    # Gửi thông báo chào mừng
+    await sio.emit('welcome', {
+        'message': 'Kết nối thành công đến API Gateway Socket.IO server',
+        'sid': sid,
+        'customer_id': customer_id
+    }, room=sid, namespace=namespace)
+    
+@sio.event
+async def disconnect(sid, namespace=notification_namespace):
+    logger.info(f"Client disconnected: {sid}")
+
+@sio.event
+async def message(sid, data, namespace=notification_namespace):
+    logger.info(f"Message from {sid}: {data}")
+    # Gửi tin nhắn phản hồi
+    await sio.emit('response', {'status': 'ok', 'message': 'Tin nhắn đã nhận'}, room=sid, namespace=namespace)
+    
+    # Chuyển tiếp tin nhắn đến notification service nếu cần
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{NOTIFICATION_SERVICE_URL}/forward-message",
+                json={"sid": sid, "data": data}
+            )
+            if response.status_code == 200:
+                response_data = response.json()
+                await sio.emit('notification', response_data, room=sid, namespace=namespace)
+        except Exception as e:
+            logger.error(f"Error forwarding message: {e}")
+            
+@sio.event
+async def join_room(sid, data, namespace=notification_namespace):
+    if 'room' in data:
+        room = data['room']
+        sio.enter_room(sid, room, namespace=namespace)
+        await sio.emit('room_joined', {'room': room}, room=sid, namespace=namespace)
+
+@sio.on('*', namespace=notification_namespace)
+async def catch_all(event, sid, data):
+    logger.info(f"Caught event: {event}, sid: {sid}, data: {data}")
+    await sio.emit('echo', {'event': event, 'data': data}, room=sid, namespace=notification_namespace)
+
+# Tạo ASGI app cho Socket.IO
+socket_app = socketio.ASGIApp(
+    sio,
+    socketio_path='/socket.io',
+    other_asgi_app=app
+)
+
+# Thêm route kiểm tra cho Socket.IO
+@app.get("/socket-status")
+async def socket_status():
+    return {"status": "online", "connections": len(sio.manager.get_participants())}
 
 # Movie Routes
 @app.get("/movies")
@@ -220,13 +344,37 @@ async def create_payment(payment: PaymentRequest):
                     # Gửi thông báo đến notification service
                     notification_response = await client.post(
                         f"{NOTIFICATION_SERVICE_URL}/notifications",
-                        json=notification_data
+                        json=notification_data,
+                        timeout=10.0
                     )
                     
-                    print(f"Notification sent: {notification_response.status_code}")
+                    if notification_response.status_code != 200:
+                        print(f"Lỗi từ notification service: {notification_response.text}")
+                    else:
+                        print(f"Notification sent: {notification_response.status_code}")
+                        
+                        # Gửi thông báo qua websocket
+                        customer_id = booking_data.get("customer_id")
+                        if customer_id:
+                            try:
+                                # Lấy thông tin thông báo đã được lưu
+                                notification_result = notification_response.json()
+                                
+                                # Gửi thông báo đến phòng của customer
+                                room = f"customer_{customer_id}"
+                                await sio.emit('new_notification', notification_result, room=room, namespace=notification_namespace)
+                                logger.info(f"Đã gửi thông báo thanh toán qua websocket đến customer_id: {customer_id}, và message: {notification_result}")
+                            except Exception as ws_error:
+                                logger.error(f"Lỗi khi gửi thông báo thanh toán qua websocket: {ws_error}")
+                        
+                except httpx.RequestError as notification_error:
+                    # Chỉ ghi log lỗi thông báo, không ảnh hưởng đến thanh toán
+                    print(f"Lỗi kết nối đến dịch vụ thông báo: {notification_error}")
+                except httpx.TimeoutException:
+                    print("Kết nối đến dịch vụ thông báo quá hạn")
                 except Exception as notification_error:
                     # Chỉ ghi log lỗi thông báo, không ảnh hưởng đến thanh toán
-                    print(f"Error sending notification: {notification_error}")
+                    print(f"Lỗi khi gửi thông báo: {notification_error}")
                 
             return payment_result
         except httpx.TimeoutException:
@@ -304,49 +452,103 @@ async def update_customer(customer_id: str, customer: dict):
 # Notification Routes
 @app.post("/notifications")
 async def create_notification(notification: dict):
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.post(
                 f"{NOTIFICATION_SERVICE_URL}/notifications",
                 json=notification
             )
-            return response.json()
+            
+            if response.status_code == 200:
+                notification_data = response.json()
+                
+                # Sau khi tạo thông báo thành công, gửi thông báo qua websocket
+                customer_id = notification.get("customer_id")
+                if customer_id:
+                    try:
+                        # Gửi thông báo đến phòng của customer
+                        room = f"customer_{customer_id}"
+                        await sio.emit('new_notification', notification_data, room=room, namespace=notification_namespace)
+                        logger.info(f"Đã gửi thông báo qua websocket đến customer_id: {customer_id}")
+                    except Exception as ws_error:
+                        logger.error(f"Lỗi khi gửi thông báo qua websocket: {ws_error}")
+                
+                return notification_data
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Lỗi từ dịch vụ thông báo: {response.text}"
+                )
         except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Lỗi kết nối đến dịch vụ thông báo: {str(e)}")
+            raise HTTPException(status_code=503, detail=f"Không thể kết nối đến dịch vụ thông báo: {str(e)}")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Kết nối đến dịch vụ thông báo quá hạn")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi khi tạo thông báo: {str(e)}")
 
 @app.get("/notifications/{notification_id}")
 async def get_notification(notification_id: str):
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
                 f"{NOTIFICATION_SERVICE_URL}/notifications/{notification_id}"
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Lỗi từ dịch vụ thông báo: {response.text}"
+                )
         except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Lỗi kết nối đến dịch vụ thông báo: {str(e)}")
+            raise HTTPException(status_code=503, detail=f"Không thể kết nối đến dịch vụ thông báo: {str(e)}")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Kết nối đến dịch vụ thông báo quá hạn")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi khi lấy thông báo: {str(e)}")
 
 @app.get("/notifications/customer/{customer_id}")
 async def get_customer_notifications(customer_id: str):
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(
                 f"{NOTIFICATION_SERVICE_URL}/notifications/customer/{customer_id}"
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Lỗi từ dịch vụ thông báo: {response.text}"
+                )
         except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Lỗi kết nối đến dịch vụ thông báo: {str(e)}")
+            raise HTTPException(status_code=503, detail=f"Không thể kết nối đến dịch vụ thông báo: {str(e)}")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Kết nối đến dịch vụ thông báo quá hạn")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi khi lấy thông báo: {str(e)}")
 
 @app.put("/notifications/{notification_id}/status")
 async def update_notification_status(notification_id: str, status: str):
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.put(
                 f"{NOTIFICATION_SERVICE_URL}/notifications/{notification_id}/status",
                 params={"status": status}
             )
-            return response.json()
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Lỗi từ dịch vụ thông báo: {response.text}"
+                )
         except httpx.RequestError as e:
-            raise HTTPException(status_code=500, detail=f"Lỗi kết nối đến dịch vụ thông báo: {str(e)}")
+            raise HTTPException(status_code=503, detail=f"Không thể kết nối đến dịch vụ thông báo: {str(e)}")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Kết nối đến dịch vụ thông báo quá hạn")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi khi cập nhật trạng thái thông báo: {str(e)}")
 
 # New API Endpoints for Management
 @app.post("/admin/showtimes/create-daily")
@@ -457,4 +659,7 @@ async def create_seats_for_showtime(showtime_id: str):
             except httpx.RequestError as e:
                 raise HTTPException(status_code=500, detail=f"Lỗi kết nối đến dịch vụ ghế ngồi: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi khi tạo ghế: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Lỗi khi tạo ghế: {str(e)}")
+
+# Export ứng dụng ASGI
+app = socket_app 

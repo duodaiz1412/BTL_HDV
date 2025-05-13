@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNotifications } from './NotificationProvider';
-import { markNotificationAsRead } from '../services/api';
 
 const NotificationBell = () => {
-  const { notifications, loading, socketStatus, markAsRead } = useNotifications();
+  const { notifications, loading, socketStatus, markAsRead, socket } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-
+  
   // Đếm số thông báo chưa đọc
   useEffect(() => {
     if (notifications) {
@@ -15,6 +14,14 @@ const NotificationBell = () => {
     }
   }, [notifications]);
 
+  // Xử lý thử kết nối lại khi có vấn đề
+  const handleReconnect = useCallback(() => {
+    if (socket) {
+      console.log('Thử kết nối lại...');
+      socket.connect();
+    }
+  }, [socket]);
+
   const toggleNotifications = () => {
     setIsOpen(!isOpen);
   };
@@ -22,10 +29,7 @@ const NotificationBell = () => {
   const handleNotificationClick = async (notification) => {
     try {
       if (notification._id && notification.status === 'pending') {
-        // Gọi API để đánh dấu đã đọc
-        await markNotificationAsRead(notification._id);
-        
-        // Cập nhật trạng thái trong context
+        // Gọi hàm từ context để đánh dấu đã đọc
         markAsRead(notification._id);
       }
     } catch (error) {
@@ -37,12 +41,31 @@ const NotificationBell = () => {
   const getIconColor = () => {
     if (socketStatus === 'connected') {
       return 'text-gray-600 hover:text-blue-500';
-    } else if (socketStatus.startsWith('error:') || socketStatus === 'reconnect failed') {
+    } else if (socketStatus === 'error' || socketStatus === 'connect_error') {
       return 'text-red-500 hover:text-red-400';
-    } else if (socketStatus.startsWith('reconnecting')) {
+    } else if (socketStatus === 'reconnecting') {
       return 'text-yellow-500 hover:text-yellow-400';
     }
     return 'text-gray-400 hover:text-blue-400';
+  };
+
+  // Hiển thị trạng thái kết nối dưới dạng văn bản
+  const getConnectionStatusText = () => {
+    switch (socketStatus) {
+      case 'connected':
+        return 'Kết nối thông báo đang hoạt động';
+      case 'disconnected':
+        return 'Kết nối thông báo bị ngắt';
+      case 'error':
+      case 'connect_error':
+        return 'Lỗi kết nối thông báo';
+      case 'reconnecting':
+        return 'Đang kết nối lại...';
+      case 'no customer_id':
+        return 'Bạn chưa đăng nhập';
+      default:
+        return `Trạng thái: ${socketStatus}`;
+    }
   };
 
   return (
@@ -50,7 +73,7 @@ const NotificationBell = () => {
       <button 
         onClick={toggleNotifications} 
         className={`relative p-2 transition-colors ${getIconColor()}`}
-        title={socketStatus === 'connected' ? 'Kết nối thông báo đang hoạt động' : `Trạng thái kết nối: ${socketStatus}`}
+        title={getConnectionStatusText()}
       >
         <svg 
           xmlns="http://www.w3.org/2000/svg" 
@@ -85,18 +108,33 @@ const NotificationBell = () => {
                     {unreadCount} chưa đọc
                   </span>
                 )}
-                <span className={`w-2 h-2 rounded-full ${socketStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}
-                      title={socketStatus === 'connected' ? 'Đã kết nối' : socketStatus}>
+                <span 
+                  className={`w-2 h-2 rounded-full ${
+                    socketStatus === 'connected' ? 'bg-green-500' : 
+                    socketStatus === 'reconnecting' ? 'bg-yellow-500' : 
+                    'bg-red-500'
+                  }`}
+                  title={getConnectionStatusText()}>
                 </span>
               </div>
             </div>
           </div>
           
           <div className="max-h-80 overflow-y-auto">
-            {socketStatus.startsWith('error:') || socketStatus === 'reconnect failed' ? (
+            {socketStatus === 'error' || socketStatus === 'connect_error' ? (
               <div className="px-4 py-3 text-center text-red-500 bg-red-50">
                 <p>Không thể kết nối đến dịch vụ thông báo</p>
                 <p className="text-xs mt-1">{socketStatus}</p>
+                <button 
+                  onClick={handleReconnect}
+                  className="mt-2 px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Thử kết nối lại
+                </button>
+              </div>
+            ) : socketStatus === 'reconnecting' ? (
+              <div className="px-4 py-3 text-center text-yellow-600 bg-yellow-50">
+                <p>Đang kết nối lại...</p>
               </div>
             ) : null}
             
@@ -107,7 +145,7 @@ const NotificationBell = () => {
             ) : notifications.length > 0 ? (
               notifications.map((notification, index) => (
                 <div 
-                  key={index} 
+                  key={notification._id || index} 
                   className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${notification.status === 'pending' ? 'bg-blue-50' : ''}`}
                   onClick={() => handleNotificationClick(notification)}
                 >

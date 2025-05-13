@@ -13,6 +13,7 @@ import Register from './pages/Register';
 import SeatSelection from './pages/SeatSelection';
 import Payment from './pages/Payment';
 import { NotificationProvider } from './components/NotificationProvider';
+import NotificationLogger from './components/NotificationLogger';
 
 function App() {
   return (
@@ -84,6 +85,7 @@ function App() {
               />
             </Routes>
           </main>
+          <NotificationLogger />
         </div>
       </NotificationProvider>
     </Router>
