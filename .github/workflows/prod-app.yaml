@@ -1,0 +1,194 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY: 968998815328.dkr.ecr.ap-southeast-2.amazonaws.com/huongbui/booking-movie
+  API_GATEWAY_SERVICE_NAME: api-gateway-service
+  MOVIE_SERVICE_NAME: movie-service
+  BOOKING_SERVICE_NAME: booking-service
+  CUSTOMER_SERVICE_NAME: customer-service
+  PAYMENT_SERVICE_NAME: payment-service
+  SEAT_SERVICE_NAME: seat-service
+  NOTIFICATION_SERVICE_NAME: notification-service
+  API_GATEWAY_TASK_FAMILY: api-gateway-task
+  MOVIE_TASK_FAMILY: movie-task
+  BOOKING_TASK_FAMILY: booking-task
+  CUSTOMER_TASK_FAMILY: customer-task
+  PAYMENT_TASK_FAMILY: payment-task
+  SEAT_TASK_FAMILY: seat-task
+  NOTIFICATION_TASK_FAMILY: notification-task
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push API Gateway Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.API_GATEWAY_TASK_FAMILY }}:${{ github.sha }} ./backend/api-gateway
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.API_GATEWAY_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Build and push Movie Service Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.MOVIE_TASK_FAMILY }}:${{ github.sha }} ./backend/movie-service
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.MOVIE_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Build and push Booking Service Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.BOOKING_TASK_FAMILY }}:${{ github.sha }} ./backend/booking-service
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.BOOKING_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Build and push Customer Service Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.CUSTOMER_TASK_FAMILY }}:${{ github.sha }} ./backend/customer-service
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.CUSTOMER_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Build and push Payment Service Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.PAYMENT_TASK_FAMILY }}:${{ github.sha }} ./backend/payment-service
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.PAYMENT_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Build and push Seat Service Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.SEAT_TASK_FAMILY }}:${{ github.sha }} ./backend/seat-service
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.SEAT_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Build and push Notification Service Docker image
+        run: |
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.NOTIFICATION_TASK_FAMILY }}:${{ github.sha }} ./backend/notification-service
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.NOTIFICATION_TASK_FAMILY }}:${{ github.sha }}
+
+  deploy:
+    name: Deploy to ECS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      - name: Update API Gateway Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/api-gateway-task.json # Create this file
+          container-name: api-gateway # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.API_GATEWAY_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update API Gateway ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.API_GATEWAY_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/api-gateway-task.json
+
+      - name: Update Movie Service Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/movie-task.json # Create this file
+          container-name: movie-service # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.MOVIE_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update Movie Service ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.MOVIE_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/movie-task.json
+
+      - name: Update Booking Service Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/booking-task.json # Create this file
+          container-name: booking-service # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.BOOKING_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update Booking Service ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.BOOKING_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/booking-task.json
+
+      - name: Update Customer Service Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/customer-task.json # Create this file
+          container-name: customer-service # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.CUSTOMER_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update Customer Service ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.CUSTOMER_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/customer-task.json
+
+      - name: Update Payment Service Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/payment-task.json # Create this file
+          container-name: payment-service # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.PAYMENT_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update Payment Service ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.PAYMENT_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/payment-task.json
+
+      - name: Update Seat Service Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/seat-task.json # Create this file
+          container-name: seat-service # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.SEAT_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update Seat Service ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.SEAT_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/seat-task.json
+
+      - name: Update Notification Service Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs/task-definitions/notification-task.json # Create this file
+          container-name: notification-service # The name you gave your container in the Task Definition
+          image: ${{ env.ECR_REGISTRY }}/${{ env.NOTIFICATION_TASK_FAMILY }}:${{ github.sha }}
+
+      - name: Update Notification Service ECS Service
+        uses: aws-actions/amazon-ecs-deploy-service@v1
+        with:
+          service: ${{ env.NOTIFICATION_SERVICE_NAME }}
+          cluster: Movie-Booking-Harry # Replace with your ECS cluster name
+          task-definition: ecs/task-definitions/notification-task.json

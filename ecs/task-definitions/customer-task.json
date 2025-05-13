@@ -1,0 +1,48 @@
+{
+  "family": "customer-task",
+  "containerDefinitions": [
+    {
+      "name": "customer-container",
+      "image": "${ECR_REGISTRY}/customer-service:latest",
+      "cpu": 256,
+      "memory": 512,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000
+        }
+      ],
+      "environment": [
+        {
+          "name": "MONGODB_URI",
+          "value": "mongodb+srv://admin:admin@datvephim.pmydnk2.mongodb.net/?retryWrites=true&w=majority&appName=DatVePhim"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "value": "AKIA6DHGUQZQGQMCRAHX"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "value": "J8CIrr42pd/f0exQFTH4T64IiRLcwGRDOPeVdDHA"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "ap-southeast-2"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/customer-task",
+          "awslogs-region": "ap-southeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "networkMode": "bridge",
+  "cpu": "256",
+  "memory": "512",
+  "taskRoleArn": "arn:aws:iam::968998815328:role/ecsTaskRole",
+  "executionRoleArn": "arn:aws:iam::968998815328:role/ecsTaskExecutionRole"
+}
