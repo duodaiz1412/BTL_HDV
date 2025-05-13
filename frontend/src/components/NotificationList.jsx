@@ -7,6 +7,11 @@ const NotificationList = () => {
   const { notifications, setNotifications, updateUnreadCount } = useNotifications();
   const [markingAsRead, setMarkingAsRead] = useState(null);
 
+  // Sắp xếp thông báo theo thời gian mới nhất
+  const sortedNotifications = [...notifications].sort((a, b) => 
+    new Date(b.created_at) - new Date(a.created_at)
+  );
+
   const handleMarkAsRead = async (notificationId) => {
     setMarkingAsRead(notificationId);
     try {
@@ -31,13 +36,13 @@ const NotificationList = () => {
   }
 
   return (
-    <div className="max-w-lg mx-auto p-4">
+    <div id="notifications-list" className="max-w-lg mx-auto p-4">
       <h2 className="text-2xl font-bold mb-4">Thông báo</h2>
       {notifications.length === 0 ? (
         <p className="text-gray-500 text-center">Không có thông báo nào</p>
       ) : (
         <div className="space-y-4">
-          {notifications.map((notification) => (
+          {sortedNotifications.map((notification) => (
             <div
               key={notification._id}
               className={`p-4 rounded-lg shadow ${

@@ -5,6 +5,7 @@ const Register = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     username: '',
+    name: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -31,7 +32,7 @@ const Register = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/customers', {
+      const response = await fetch('http://localhost:8000/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -40,7 +41,8 @@ const Register = () => {
           username: formData.username,
           email: formData.email,
           password: formData.password,
-          phone: formData.phone || undefined,
+          name: formData.name,
+          phone: formData.phone || "",
         }),
       });
 
@@ -96,6 +98,23 @@ const Register = () => {
                   required
                   className="input"
                   value={formData.username}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="name" className="label">
+                Họ và tên
+              </label>
+              <div className="mt-1">
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  className="input"
+                  value={formData.name}
                   onChange={handleChange}
                 />
               </div>
