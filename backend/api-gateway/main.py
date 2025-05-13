@@ -130,7 +130,7 @@ async def connect(sid, environ, namespace=notification_namespace):
     # Tự động đưa client vào phòng dựa trên customer_id
     if customer_id:
         room = f"customer_{customer_id}"
-        sio.enter_room(sid, room, namespace=namespace)
+        await sio.enter_room(sid, room, namespace=namespace)
         logger.info(f"Đã đưa client {sid} vào phòng {room}")
     
     # Gửi thông báo chào mừng
@@ -143,6 +143,9 @@ async def connect(sid, environ, namespace=notification_namespace):
 @sio.event
 async def disconnect(sid, namespace=notification_namespace):
     logger.info(f"Client disconnected: {sid}")
+    # Lấy danh sách phòng của client
+    rooms = sio.rooms(sid, namespace=namespace)
+    logger.info(f"Client {sid} left rooms: {rooms}")
 
 @sio.event
 async def message(sid, data, namespace=notification_namespace):
@@ -167,8 +170,12 @@ async def message(sid, data, namespace=notification_namespace):
 async def join_room(sid, data, namespace=notification_namespace):
     if 'room' in data:
         room = data['room']
-        sio.enter_room(sid, room, namespace=namespace)
+        await sio.enter_room(sid, room, namespace=namespace)
+        logger.info(f"Client {sid} joined room: {room}")
         await sio.emit('room_joined', {'room': room}, room=sid, namespace=namespace)
+        # Log danh sách phòng của client
+        rooms = sio.rooms(sid, namespace=namespace)
+        logger.info(f"Client {sid} rooms after join: {rooms}")
 
 @sio.on('*', namespace=notification_namespace)
 async def catch_all(event, sid, data):
@@ -260,7 +267,54 @@ async def create_booking(booking: BookingRequest):
                 f"{BOOKING_SERVICE_URL}/bookings",
                 json=booking.dict()
             )
-            return response.json()
+            booking_result = response.json()
+            
+            # Nếu tạo booking thành công, gửi thông báo
+            if response.status_code == 200:
+                try:
+                    # Lấy thông tin chi tiết về phim
+                    movie_response = await client.get(f"{MOVIE_SERVICE_URL}/movies/{booking.movie_id}")
+                    movie_data = movie_response.json()
+                    movie_title = movie_data.get("title", "")
+                    
+                    # Lấy ra danh sách seat_number từ seats
+                    seat_numbers = [seat.seat_number for seat in booking.seats]
+                    seats_str = ", ".join(seat_numbers)
+                    formatted_amount = f"{booking.total_amount:,.0f} VND"
+                    
+                    # Tạo nội dung thông báo
+                    notification_content = f"Đặt vé thành công! Vé xem phim '{movie_title}' (ghế {seats_str}) với số tiền {formatted_amount}. Vui lòng thanh toán trong vòng 15 phút."
+                    
+                    # Tạo thông báo
+                    notification_data = {
+                        "type": "booking_confirmation",
+                        "customer_id": booking.customer_id,
+                        "content": notification_content,
+                        "booking_id": booking_result.get("_id", "")
+                    }
+                    
+                    # Gửi thông báo đến notification service và socket
+                    notification_response = await client.post(
+                        f"{NOTIFICATION_SERVICE_URL}/notifications",
+                        json=notification_data,
+                        timeout=10.0
+                    )
+                    
+                    if notification_response.status_code == 200:
+                        notification_result = notification_response.json()
+                        success = await send_notification_to_customer(booking.customer_id, notification_result)
+                        if success:
+                            logger.info(f"Successfully sent booking notification to customer {booking.customer_id}")
+                        else:
+                            logger.error(f"Failed to send booking notification to customer {booking.customer_id}")
+                    else:
+                        logger.error(f"Failed to create notification: {notification_response.text}")
+                        
+                except Exception as notification_error:
+                    # Chỉ ghi log lỗi thông báo, không ảnh hưởng đến booking
+                    logger.error(f"Error sending notification: {notification_error}")
+            
+            return booking_result
         except httpx.RequestError as e:
             raise HTTPException(status_code=500, detail=f"Error connecting to service: {str(e)}")
 
@@ -357,15 +411,31 @@ async def create_payment(payment: PaymentRequest):
                         customer_id = booking_data.get("customer_id")
                         if customer_id:
                             try:
-                                # Lấy thông tin thông báo đã được lưu
-                                notification_result = notification_response.json()
-                                
-                                # Gửi thông báo đến phòng của customer
+                                # Validate and parse notification response
+                                if notification_response.status_code != 200:
+                                    logger.error(f"Invalid notification response: {notification_response.text}")
+                                    return  # Skip WebSocket emission if notification creation failed
+
+                                try:
+                                    notification_result = notification_response.json()
+                                except json.decoder.JSONDecodeError as json_error:
+                                    logger.error(f"Failed to parse notification response: {json_error}")
+                                    return
+
+                                # Send notification to customer room
                                 room = f"customer_{customer_id}"
-                                await sio.emit('new_notification', notification_result, room=room, namespace=notification_namespace)
-                                logger.info(f"Đã gửi thông báo thanh toán qua websocket đến customer_id: {customer_id}, và message: {notification_result}")
+                                await sio.emit(
+                                    'new_notification',
+                                    notification_result,
+                                    room=room,
+                                    namespace=notification_namespace
+                                )
+                                logger.info(
+                                    f"Sent payment notification via WebSocket to customer_id: {customer_id}, "
+                                    f"room: {room}, message: {notification_result}"
+                                )
                             except Exception as ws_error:
-                                logger.error(f"Lỗi khi gửi thông báo thanh toán qua websocket: {ws_error}")
+                                logger.error(f"Failed to send WebSocket notification for customer_id {customer_id}: {ws_error}")
                         
                 except httpx.RequestError as notification_error:
                     # Chỉ ghi log lỗi thông báo, không ảnh hưởng đến thanh toán
@@ -465,13 +535,11 @@ async def create_notification(notification: dict):
                 # Sau khi tạo thông báo thành công, gửi thông báo qua websocket
                 customer_id = notification.get("customer_id")
                 if customer_id:
-                    try:
-                        # Gửi thông báo đến phòng của customer
-                        room = f"customer_{customer_id}"
-                        await sio.emit('new_notification', notification_data, room=room, namespace=notification_namespace)
-                        logger.info(f"Đã gửi thông báo qua websocket đến customer_id: {customer_id}")
-                    except Exception as ws_error:
-                        logger.error(f"Lỗi khi gửi thông báo qua websocket: {ws_error}")
+                    success = await send_notification_to_customer(customer_id, notification_data)
+                    if success:
+                        logger.info(f"Successfully sent notification to customer {customer_id}")
+                    else:
+                        logger.error(f"Failed to send notification to customer {customer_id}")
                 
                 return notification_data
             else:
@@ -660,6 +728,28 @@ async def create_seats_for_showtime(showtime_id: str):
                 raise HTTPException(status_code=500, detail=f"Lỗi kết nối đến dịch vụ ghế ngồi: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi tạo ghế: {str(e)}")
+
+# Hàm tiện ích để gửi thông báo qua socket
+async def send_notification_to_customer(customer_id: str, notification_data: dict):
+    try:
+        room = f"customer_{customer_id}"
+        # Kiểm tra xem phòng có tồn tại không
+        room_size = len(await sio.manager.get_room_members(room, namespace=notification_namespace))
+        logger.info(f"Room {room} has {room_size} members")
+        
+        # Gửi thông báo
+        await sio.emit(
+            'new_notification',
+            notification_data,
+            room=room,
+            namespace=notification_namespace
+        )
+        logger.info(f"Sent notification to room {room}: {notification_data}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error sending notification via socket: {str(e)}")
+        return False
 
 # Export ứng dụng ASGI
 app = socket_app 

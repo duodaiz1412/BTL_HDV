@@ -1,7 +1,11 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
+import NotificationList from './components/NotificationList';
+import NotificationProvider from './components/NotificationProvider';
 import Home from './pages/Home';
 import MovieDetail from './pages/MovieDetail';
 import Booking from './pages/Booking';
@@ -12,8 +16,6 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import SeatSelection from './pages/SeatSelection';
 import Payment from './pages/Payment';
-import { NotificationProvider } from './components/NotificationProvider';
-import NotificationLogger from './components/NotificationLogger';
 
 function App() {
   return (
@@ -83,9 +85,27 @@ function App() {
                   </PrivateRoute>
                 }
               />
+              <Route
+                path="/notifications"
+                element={
+                  <PrivateRoute>
+                    <NotificationList />
+                  </PrivateRoute>
+                }
+              />
             </Routes>
           </main>
-          <NotificationLogger />
+          <ToastContainer
+            position="top-right"
+            autoClose={5000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+          />
         </div>
       </NotificationProvider>
     </Router>

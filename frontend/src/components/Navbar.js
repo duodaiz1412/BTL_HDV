@@ -1,10 +1,11 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import NotificationBell from './NotificationBell';
+import { useNotifications } from './NotificationProvider';
 
 const Navbar = () => {
   const navigate = useNavigate();
   const customerId = localStorage.getItem('customer_id');
+  const { unreadCount } = useNotifications();
 
   const handleLogout = () => {
     localStorage.removeItem('customer_id');
@@ -26,10 +27,17 @@ const Navbar = () => {
               <Link to="/bookings" className="hover:text-gray-300">
                 Đặt vé của tôi
               </Link>
+              <Link to="/notifications" className="hover:text-gray-300 relative">
+                Thông báo
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </Link>
               <Link to="/profile" className="hover:text-gray-300">
                 Tài khoản
               </Link>
-              <NotificationBell />
               <button
                 onClick={handleLogout}
                 className="hover:text-gray-300"
