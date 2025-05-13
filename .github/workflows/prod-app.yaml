@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
 
 env:
-  AWS_REGION: ap-southeast-1
+  AWS_REGION: ap-southeast-2
   ECR_REGISTRY: 968998815328.dkr.ecr.ap-southeast-2.amazonaws.com/huongbui/booking-movie
   API_GATEWAY_SERVICE_NAME: api-gateway-service
   MOVIE_SERVICE_NAME: movie-service
@@ -39,7 +39,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
+          aws-region: ap-southeast-2
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -93,7 +93,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
+          aws-region: ap-southeast-2
 
       - name: Update API Gateway Task Definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
