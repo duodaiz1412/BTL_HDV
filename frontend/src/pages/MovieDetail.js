@@ -9,8 +9,7 @@ import {
   TicketIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
-import { format } from 'date-fns';
-import { vi } from 'date-fns/locale';
+import { formatTime, formatFullDate, toVietnamTime } from '../utils/dateUtils';
 
 const MovieDetail = () => {
   const { movieId } = useParams();
@@ -32,7 +31,7 @@ const MovieDetail = () => {
         
         // Nhóm suất chiếu theo ngày
         const groupedShowtimes = showtimesResponse.data.reduce((acc, showtime) => {
-          const date = new Date(showtime.time).toLocaleDateString();
+          const date = toVietnamTime(showtime.time).format('YYYY-MM-DD');
           if (!acc[date]) {
             acc[date] = [];
           }
@@ -89,23 +88,6 @@ const MovieDetail = () => {
       </div>
     );
   }
-
-  const formatShowtime = (time) => {
-    try {
-      return format(new Date(time), 'HH:mm', { locale: vi });
-    } catch (error) {
-      return 'Thời gian không hợp lệ';
-    }
-  };
-
-  const formatDate = (dateStr) => {
-    try {
-      const date = new Date(dateStr);
-      return format(date, 'EEEE, dd/MM/yyyy', { locale: vi });
-    } catch (error) {
-      return dateStr;
-    }
-  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', {
@@ -171,7 +153,7 @@ const MovieDetail = () => {
                     : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                 }`}
               >
-                {formatDate(date)}
+                {formatFullDate(date)}
               </button>
             ))}
           </div>
@@ -186,7 +168,7 @@ const MovieDetail = () => {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <p className="text-xl font-semibold text-blue-600">
-                      {formatShowtime(showtime.time)}
+                      {formatTime(showtime.time)}
                     </p>
                     <p className="text-gray-600 flex items-center mt-1">
                       <FilmIcon className="w-4 h-4 mr-1" />

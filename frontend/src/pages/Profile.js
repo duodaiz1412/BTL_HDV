@@ -11,8 +11,7 @@ import {
   FilmIcon,
   CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
-import { format } from 'date-fns';
-import { vi } from 'date-fns/locale';
+import { formatDate } from '../utils/dateUtils';
 
 const Profile = () => {
   const [profile, setProfile] = useState(null);
@@ -43,7 +42,7 @@ const Profile = () => {
         
         // Định dạng ngày tạo tài khoản
         const memberSince = userData.created_at 
-          ? format(new Date(userData.created_at), 'dd/MM/yyyy', { locale: vi })
+          ? formatDate(userData.created_at)
           : 'Không xác định';
 
         setStats(prev => ({

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getBookings } from '../services/api';
+import { formatDateTime, toVietnamTime } from '../utils/dateUtils';
 
 const Bookings = () => {
   const [bookings, setBookings] = useState([]);
@@ -44,7 +45,7 @@ const Bookings = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">My Bookings</h1>
+      <h1 className="text-3xl font-bold mb-8">Vé của tôi</h1>
 
       {/* Tabs */}
       <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
@@ -94,7 +95,7 @@ const Bookings = () => {
         <div className="grid gap-6">
           {filteredBookings.map((booking) => (
             <div
-              key={booking._id}
+              key={booking.id}
               className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow duration-200"
             >
               <div className="flex justify-between items-start mb-4">
@@ -104,7 +105,7 @@ const Bookings = () => {
                   </h2>
                   <p className="text-gray-600">
                     Suất chiếu: {booking.showtime && booking.showtime !== 'Invalid Date' 
-                      ? new Date(booking.showtime).toLocaleString('vi-VN') 
+                      ? formatDateTime(booking.showtime)
                       : 'Không có thông tin'}
                   </p>
                 </div>
@@ -142,14 +143,14 @@ const Bookings = () => {
               <div className="flex justify-end">
                 {booking.status === 'pending' ? (
                   <Link
-                    to={`/payment/${booking._id}`}
+                    to={`/payment/${booking.id}`}
                     className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded transition-colors duration-200"
                   >
                     Thanh toán ngay
                   </Link>
                 ) : (
                   <Link
-                    to={`/bookings/${booking._id}`}
+                    to={`/bookings/${booking.id}`}
                     className="text-blue-500 hover:text-blue-600 transition-colors duration-200"
                   >
                     Xem chi tiết

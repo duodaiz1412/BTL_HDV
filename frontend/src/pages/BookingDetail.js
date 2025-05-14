@@ -2,20 +2,26 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getBookingById } from '../services/api';
 import { ArrowLeftIcon, TicketIcon, ClockIcon, CurrencyDollarIcon, CalendarIcon, UserIcon } from '@heroicons/react/24/outline';
-import { formatDistance } from 'date-fns';
-import { vi } from 'date-fns/locale';
+import { formatDateTime, formatTimeAgo, debugTime } from '../utils/dateUtils';
 
 const BookingDetail = () => {
   const { bookingId } = useParams();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     const fetchBookingDetails = async () => {
       try {
         const response = await getBookingById(bookingId);
         setBooking(response.data);
+        
+        // Log cho debug thời gian
+        if (response.data?.created_at) {
+          console.log('Thông tin thời gian:', debugTime(response.data.created_at));
+        }
+        
         setLoading(false);
       } catch (err) {
         setError('Không thể tải thông tin đặt vé');
@@ -25,17 +31,6 @@ const BookingDetail = () => {
 
     fetchBookingDetails();
   }, [bookingId]);
-
-  const formatTimeAgo = (date) => {
-    try {
-      return formatDistance(new Date(date), new Date(), {
-        addSuffix: true,
-        locale: vi
-      });
-    } catch (error) {
-      return date;
-    }
-  };
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -90,9 +85,23 @@ const BookingDetail = () => {
                  booking.status === 'pending' ? 'Chờ thanh toán' :
                  booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
               </span>
-              <span className="text-sm opacity-75">Mã đặt vé: {booking._id}</span>
+              <span className="text-sm opacity-75">Mã đặt vé: {booking.id}</span>
+              
             </div>
           </div>
+
+          {/* Debug info */}
+          {showDebug && (
+            <div className="bg-gray-100 p-4 border-b border-gray-200 font-mono text-xs">
+              <h3 className="font-bold mb-2">Debug thông tin thời gian:</h3>
+              <div>
+                <p>Gốc: {booking.created_at}</p>
+                <p>Múi giờ hiện tại: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                <p>Thời gian hiện tại: {new Date().toISOString()}</p>
+                <p>Format hiển thị: {formatTimeAgo(booking.created_at)}</p>
+              </div>
+            </div>
+          )}
 
           {/* Main Content */}
           <div className="p-6">
@@ -106,14 +115,7 @@ const BookingDetail = () => {
                   <div>
                     <p className="font-medium">Suất chiếu</p>
                     <p className="text-gray-600">
-                      {new Date(booking.showtime).toLocaleString('vi-VN', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatDateTime(booking.showtime)}
                     </p>
                   </div>
                 </div>
@@ -144,6 +146,7 @@ const BookingDetail = () => {
                     <p className="font-medium">Thời gian đặt vé</p>
                     <p className="text-gray-600">
                       {formatTimeAgo(booking.created_at)}
+                      {showDebug && ` (${booking.created_at})`}
                     </p>
                   </div>
                 </div>

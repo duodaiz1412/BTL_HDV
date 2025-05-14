@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNotifications } from './NotificationProvider';
 import { markNotificationAsRead } from '../services/api';
 import { BellIcon, CheckIcon, CheckBadgeIcon } from '@heroicons/react/24/outline';
-import { formatDistance, formatRelative } from 'date-fns';
-import { vi } from 'date-fns/locale';
+import moment from 'moment';
+import { formatTimeAgo, formatDateTime } from '../utils/dateUtils';
 import { toast } from 'react-toastify';
 
 const NotificationDropdown = () => {
@@ -14,7 +14,7 @@ const NotificationDropdown = () => {
 
   // Sắp xếp thông báo theo thời gian mới nhất
   const sortedNotifications = [...notifications].sort((a, b) => 
-    new Date(b.created_at) - new Date(a.created_at)
+    moment(b.created_at).valueOf() - moment(a.created_at).valueOf()
   );
 
   // Đóng dropdown khi click ra ngoài
@@ -74,20 +74,19 @@ const NotificationDropdown = () => {
 
   // Định dạng thời gian
   const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
+    if (!dateString) return '';
     
     try {
-      const distance = formatDistance(date, now, { 
-        addSuffix: true,
-        locale: vi 
-      });
+      const date = moment(dateString);
+      const now = moment();
       
-      if (date.getDate() === now.getDate()) {
-        return distance;
-      } else {
-        return formatRelative(date, now, { locale: vi });
+      // Nếu thời gian trong tương lai
+      if (date.isAfter(now)) {
+        return formatDateTime(dateString);
       }
+      
+      // Nếu là ngày hôm nay hoặc ngày trước đó, sử dụng định dạng tương đối
+      return formatTimeAgo(dateString);
     } catch (error) {
       console.error('Error formatting date:', error);
       return dateString;
