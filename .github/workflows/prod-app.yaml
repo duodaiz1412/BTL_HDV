@@ -13,6 +13,14 @@ jobs:
   build-and-push:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
+    outputs:
+      image-api-gateway: ${{ steps.build-api-gateway.outputs.image }}
+      image-movie: ${{ steps.build-movie.outputs.image }}
+      image-booking: ${{ steps.build-booking.outputs.image }}
+      image-customer: ${{ steps.build-customer.outputs.image }}
+      image-payment: ${{ steps.build-payment.outputs.image }}
+      image-seat: ${{ steps.build-seat.outputs.image }}
+      image-notification: ${{ steps.build-notification.outputs.image }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,33 +34,47 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push API Gateway Docker image
+        id: build-api-gateway
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/api-gateway-task:${{ github.sha }} ./backend/api-gateway
           docker push ${{ env.ECR_REGISTRY }}/api-gateway-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/api-gateway-task:${{ github.sha }}" >> $GITHUB_OUTPUT
       - name: Build and push Movie Service Docker image
+        id: build-movie
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/movie-task:${{ github.sha }} ./backend/movie-service
           docker push ${{ env.ECR_REGISTRY }}/movie-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/movie-task:${{ github.sha }}" >> $GITHUB_OUTPUT
       - name: Build and push Booking Service Docker image
+        id: build-booking
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/booking-task:${{ github.sha }} ./backend/booking-service
           docker push ${{ env.ECR_REGISTRY }}/booking-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/booking-task:${{ github.sha }}" >> $GITHUB_OUTPUT
       - name: Build and push Customer Service Docker image
+        id: build-customer
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/customer-task:${{ github.sha }} ./backend/customer-service
           docker push ${{ env.ECR_REGISTRY }}/customer-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/customer-task:${{ github.sha }}" >> $GITHUB_OUTPUT
       - name: Build and push Payment Service Docker image
+        id: build-payment
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/payment-task:${{ github.sha }} ./backend/payment-service
           docker push ${{ env.ECR_REGISTRY }}/payment-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/payment-task:${{ github.sha }}" >> $GITHUB_OUTPUT
       - name: Build and push Seat Service Docker image
+        id: build-seat
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/seat-task:${{ github.sha }} ./backend/seat-service
           docker push ${{ env.ECR_REGISTRY }}/seat-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/seat-task:${{ github.sha }}" >> $GITHUB_OUTPUT
       - name: Build and push Notification Service Docker image
+        id: build-notification
         run: |
           docker build -t ${{ env.ECR_REGISTRY }}/notification-task:${{ github.sha }} ./backend/notification-service
           docker push ${{ env.ECR_REGISTRY }}/notification-task:${{ github.sha }}
+          echo "image=${{ env.ECR_REGISTRY }}/notification-task:${{ github.sha }}" >> $GITHUB_OUTPUT
   deploy:
     name: Deploy to ECS
     needs: build-and-push
@@ -64,30 +86,37 @@ jobs:
             task-family: api-gateway-task
             task-definition: ecs/task-definitions/api-gateway-task.json
             container-name: api-gateway
+            image_output: ${{ needs.build-and-push.outputs.image-api-gateway }}
           - name: movie-service
             task-family: movie-task
             task-definition: ecs/task-definitions/movie-task.json
             container-name: movie-service
+            image_output: ${{ needs.build-and-push.outputs.image-movie }}
           - name: booking-service
             task-family: booking-task
             task-definition: ecs/task-definitions/booking-task.json
             container-name: booking-service
+            image_output: ${{ needs.build-and-push.outputs.image-booking }}
           - name: customer-service
             task-family: customer-task
             task-definition: ecs/task-definitions/customer-task.json
             container-name: customer-service
+            image_output: ${{ needs.build-and-push.outputs.image-customer }}
           - name: payment-service
             task-family: payment-task12
             task-definition: ecs/task-definitions/payment-task.json
             container-name: payment-service
+            image_output: ${{ needs.build-and-push.outputs.image-payment }}
           - name: seat-service
             task-family: seat-task
             task-definition: ecs/task-definitions/seat-task.json
             container-name: seat-service
+            image_output: ${{ needs.build-and-push.outputs.image-seat }}
           - name: notification-service
             task-family: notification-task
             task-definition: ecs/task-definitions/notification-task.json
             container-name: notification-service
+            image_output: ${{ needs.build-and-push.outputs.image-notification }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,16 +124,27 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-southeast-2
+      - name: Download task definitions
+        run: |
+          aws ecs describe-task-definition --task-definition api-gateway-task --query taskDefinition > api-gateway-task-definition.json
+          aws ecs describe-task-definition --task-definition booking-task --query taskDefinition > booking-task-definition.json
+          aws ecs describe-task-definition --task-definition customer-task --query taskDefinition > customer-task-definition.json
+          aws ecs describe-task-definition --task-definition movie-task --query taskDefinition > movie-task-definition.json
+          aws ecs describe-task-definition --task-definition notification-task --query taskDefinition > notification-task-definition.json
+          aws ecs describe-task-definition --task-definition payment-task12 --query taskDefinition > payment-task-definition.json #corrected here
+          aws ecs describe-task-definition --task-definition seat-task --query taskDefinition > seat-task-definition.json
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ matrix.service.task_definition }}
+          container-name: ${{ matrix.service.container-name }}
+          image: ${{ matrix.service.image_output }}
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition: ${{ matrix.service.task-definition }}
+          task-definition: task-definition.json # This should be ok, the correct file is used in the previous step
           service: ${{ matrix.service.name }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-        env:
-          AWS_REGION: ap-southeast-2
-          ECR_REGISTRY: 968998815328.dkr.ecr.ap-southeast-2.amazonaws.com/huongbui/booking-movie
-
