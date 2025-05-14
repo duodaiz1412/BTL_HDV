@@ -4,7 +4,7 @@
   "containerDefinitions": [
     {
       "name": "api-gateway",
-      "image": "${ECR_REGISTRY}/api-gateway-task:latest",
+      "image": "${env.ECR_REGISTRY}/api-gateway-task:latest",
       "portMappings": [
         {
           "containerPort": 8000,

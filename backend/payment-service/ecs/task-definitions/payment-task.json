@@ -3,7 +3,7 @@
   "containerDefinitions": [
     {
       "name": "payment-service",
-      "image": "${ECR_REGISTRY}/payment-service:latest",
+      "image": "${env.ECR_REGISTRY}/payment-service:latest",
       "cpu": 256,
       "memory": 512,
       "portMappings": [

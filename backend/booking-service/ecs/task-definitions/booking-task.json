@@ -3,7 +3,7 @@
   "containerDefinitions": [
     {
       "name": "booking-service",
-      "image": "${ECR_REGISTRY}/booking-service:latest",
+      "image": "${env.ECR_REGISTRY}/booking-service:latest",
       "cpu": 256,
       "memory": 512,
       "portMappings": [
