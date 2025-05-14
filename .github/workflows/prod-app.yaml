@@ -104,4 +104,7 @@ jobs:
           service: ${{ matrix.service.name }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+        env:
+          AWS_REGION: ap-southeast-2
+          ECR_REGISTRY: 968998815328.dkr.ecr.ap-southeast-2.amazonaws.com/huongbui/booking-movie
 
