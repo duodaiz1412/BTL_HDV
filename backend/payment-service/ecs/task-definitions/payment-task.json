@@ -2,7 +2,7 @@
   "family": "payment-task",
   "containerDefinitions": [
     {
-      "name": "payment-container",
+      "name": "payment-service",
       "image": "${ECR_REGISTRY}/payment-service:latest",
       "cpu": 256,
       "memory": 512,

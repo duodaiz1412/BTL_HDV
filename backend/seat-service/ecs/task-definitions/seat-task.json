@@ -2,7 +2,7 @@
   "family": "seat-task",
   "containerDefinitions": [
     {
-      "name": "seat-container",
+      "name": "seat-service",
       "image": "${ECR_REGISTRY}/seat-service:latest",
       "cpu": 256,
       "memory": 512,

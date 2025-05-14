@@ -2,7 +2,7 @@
   "family": "notification-task",
   "containerDefinitions": [
     {
-      "name": "notification-container",
+      "name": "notification-service",
       "image": "${ECR_REGISTRY}/notification-service:latest",
       "cpu": 256,
       "memory": 512,

@@ -2,7 +2,7 @@
   "family": "customer-task",
   "containerDefinitions": [
     {
-      "name": "customer-container",
+      "name": "customer-service",
       "image": "${ECR_REGISTRY}/customer-service:latest",
       "cpu": 256,
       "memory": 512,
