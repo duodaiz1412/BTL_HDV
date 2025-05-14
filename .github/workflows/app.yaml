@@ -1,0 +1,40 @@
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.image-tag.outputs.IMAGE_TAG }}
+        run: |
+          docker build -f ${{ inputs.service_directory }}/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ${{ inputs.service_directory }}
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ inputs.service_name }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Cleanup repo & pull new changes
+        run: |
+          rm -f task-definition.json
+          git pull origin ${{ vars.MAIN_BRANCH }}
+      - name: Update terraform.tfvars.json
+        uses: jossef/action-set-json-field@v2.1
+        with:
+          file: ${{ env.TERRAFORM_VAR_FILE }}
+          field: "image_tags.${{ inputs.service_name }}"
+          value: ${{ steps.image-tag.outputs.IMAGE_TAG }}
