@@ -84,37 +84,37 @@ jobs:
         service:
           - name: api-gateway-service
             task-family: api-gateway-task
-            task-definition: ecs/task-definitions/api-gateway-task.json
+            task-definition: api-gateway-task-definition.json
             container-name: api-gateway
             image_output: ${{ needs.build-and-push.outputs.image-api-gateway }}
           - name: movie-service
             task-family: movie-task
-            task-definition: ecs/task-definitions/movie-task.json
+            task-definition: movie-task-definition.json
             container-name: movie-service
             image_output: ${{ needs.build-and-push.outputs.image-movie }}
           - name: booking-service
             task-family: booking-task
-            task-definition: ecs/task-definitions/booking-task.json
+            task-definition: booking-task-definition.json
             container-name: booking-service
             image_output: ${{ needs.build-and-push.outputs.image-booking }}
           - name: customer-service
             task-family: customer-task
-            task-definition: ecs/task-definitions/customer-task.json
+            task-definition: customer-task-definition.json
             container-name: customer-service
             image_output: ${{ needs.build-and-push.outputs.image-customer }}
           - name: payment-service
-            task-family: payment-task12
-            task-definition: ecs/task-definitions/payment-task.json
+            task-family: payment-task
+            task-definition: payment-task-definition.json
             container-name: payment-service
             image_output: ${{ needs.build-and-push.outputs.image-payment }}
           - name: seat-service
             task-family: seat-task
-            task-definition: ecs/task-definitions/seat-task.json
+            task-definition: seat-task-definition.json
             container-name: seat-service
             image_output: ${{ needs.build-and-push.outputs.image-seat }}
           - name: notification-service
             task-family: notification-task
-            task-definition: ecs/task-definitions/notification-task.json
+            task-definition: notification-task-definition.json
             container-name: notification-service
             image_output: ${{ needs.build-and-push.outputs.image-notification }}
     steps:
@@ -139,7 +139,7 @@ jobs:
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: task-definition.json
+          task-definition: ${{ matrix.service.task-definition }}
           container-name: ${{ matrix.service.container-name }}
           image: ${{ matrix.service.image_output }}
       - name: Deploy to ECS
