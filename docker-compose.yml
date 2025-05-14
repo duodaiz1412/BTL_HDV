@@ -13,7 +13,7 @@ services:
 
   # API Gateway
   api-gateway:
-    build: ./gateway/api-gateway
+    build: ./gateway
     ports:
       - "8000:8000"
     environment:
