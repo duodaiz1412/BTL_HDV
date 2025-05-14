@@ -103,7 +103,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.API_GATEWAY_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update API Gateway ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.API_GATEWAY_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
@@ -117,7 +117,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.MOVIE_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update Movie Service ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.MOVIE_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
@@ -131,7 +131,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.BOOKING_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update Booking Service ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.BOOKING_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
@@ -145,7 +145,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.CUSTOMER_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update Customer Service ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.CUSTOMER_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
@@ -159,7 +159,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.PAYMENT_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update Payment Service ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.PAYMENT_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
@@ -173,7 +173,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.SEAT_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update Seat Service ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.SEAT_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
@@ -187,7 +187,7 @@ jobs:
           image: ${{ env.ECR_REGISTRY }}/${{ env.NOTIFICATION_TASK_FAMILY }}:${{ github.sha }}
 
       - name: Update Notification Service ECS Service
-        uses: aws-actions/amazon-ecs-deploy-service@v3
+        uses: aws-actions/amazon-ecs-deploy-service@v3.0
         with:
           service: ${{ env.NOTIFICATION_SERVICE_NAME }}
           cluster: Movie-Booking-Harry # Replace with your ECS cluster name
