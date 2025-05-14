@@ -139,13 +139,14 @@ jobs:
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: ${{ matrix.service.task_definition }}
+          task-definition: task-definition.json
           container-name: ${{ matrix.service.container-name }}
           image: ${{ matrix.service.image_output }}
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition: task-definition.json # This should be ok, the correct file is used in the previous step
+          task-definition: ${{ steps.task-def.outputs.task-definition }} # Corrected line
           service: ${{ matrix.service.name }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+
