@@ -77,7 +77,7 @@ jobs:
             task-definition: ecs/task-definitions/customer-task.json
             container-name: customer-service
           - name: payment-service
-            task-family: payment-task
+            task-family: payment-task12 
             task-definition: ecs/task-definitions/payment-task.json
             container-name: payment-service
           - name: seat-service

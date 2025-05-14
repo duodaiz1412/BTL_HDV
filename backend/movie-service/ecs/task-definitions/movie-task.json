@@ -2,7 +2,7 @@
   "family": "movie-task",
   "containerDefinitions": [
     {
-      "name": "movie-container",
+      "name": "movie-service",
       "image": "${ECR_REGISTRY}/movie-service:latest",
       "cpu": 256,
       "memory": 512,
