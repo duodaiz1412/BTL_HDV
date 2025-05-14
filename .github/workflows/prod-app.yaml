@@ -133,7 +133,7 @@ jobs:
           aws ecs describe-task-definition --task-definition customer-task --query taskDefinition > customer-task-definition.json
           aws ecs describe-task-definition --task-definition movie-task --query taskDefinition > movie-task-definition.json
           aws ecs describe-task-definition --task-definition notification-task --query taskDefinition > notification-task-definition.json
-          aws ecs describe-task-definition --task-definition payment-task12 --query taskDefinition > payment-task-definition.json #corrected here
+          aws ecs describe-task-definition --task-definition payment-task --query taskDefinition > payment-task-definition.json 
           aws ecs describe-task-definition --task-definition seat-task --query taskDefinition > seat-task-definition.json
       - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
