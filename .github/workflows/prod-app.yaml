@@ -27,31 +27,31 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push API Gateway Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:api-gateway-task-${{ github.sha }} ./backend/api-gateway
+          docker build -t ${{ env.ECR_REGISTRY }}/api-gateway-task:${{ github.sha }} ./backend/api-gateway
           docker push ${{ env.ECR_REGISTRY }}:api-gateway-task-${{ github.sha }}
       - name: Build and push Movie Service Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:movie-task-${{ github.sha }} ./backend/movie-service
+          docker build -t ${{ env.ECR_REGISTRY }}/movie-task:${{ github.sha }} ./backend/movie-service
           docker push ${{ env.ECR_REGISTRY }}:movie-task-${{ github.sha }}
       - name: Build and push Booking Service Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:booking-task-${{ github.sha }} ./backend/booking-service
+          docker build -t ${{ env.ECR_REGISTRY }}/booking-task:${{ github.sha }} ./backend/booking-service
           docker push ${{ env.ECR_REGISTRY }}:booking-task-${{ github.sha }}
       - name: Build and push Customer Service Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:customer-task-${{ github.sha }} ./backend/customer-service
+          docker build -t ${{ env.ECR_REGISTRY }}/customer-task:${{ github.sha }} ./backend/customer-service
           docker push ${{ env.ECR_REGISTRY }}:customer-task-${{ github.sha }}
       - name: Build and push Payment Service Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:payment-task-${{ github.sha }} ./backend/payment-service
+          docker build -t ${{ env.ECR_REGISTRY }}/payment-task:${{ github.sha }} ./backend/payment-service
           docker push ${{ env.ECR_REGISTRY }}:payment-task-${{ github.sha }}
       - name: Build and push Seat Service Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:seat-task-${{ github.sha }} ./backend/seat-service
+          docker build -t ${{ env.ECR_REGISTRY }}/seat-task:${{ github.sha }} ./backend/seat-service
           docker push ${{ env.ECR_REGISTRY }}:seat-task-${{ github.sha }}
       - name: Build and push Notification Service Docker image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}:notification-task-${{ github.sha }} ./backend/notification-service
+          docker build -t ${{ env.ECR_REGISTRY }}/notification-task:${{ github.sha }} ./backend/notification-service
           docker push ${{ env.ECR_REGISTRY }}:notification-task-${{ github.sha }}
   deploy:
     name: Deploy to ECS
